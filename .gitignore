@@ -1,8 +1,41 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+env/
+.env
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
 *.stackdump
-# generated charts
+
+# Output written by gridify.py
 *_clean.png
 *_clean.pdf
 *_clean.svg
 *_overlay.png
+
+# Input pictures (personal photos, downloaded charts) and rembg models
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.bmp
+*.heic
+*.onnx
