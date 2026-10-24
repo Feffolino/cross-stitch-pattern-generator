@@ -801,6 +801,25 @@ def prepare_photo(path: Path, img: np.ndarray, args) -> tuple[np.ndarray, np.nda
     return img, None, "sfondo tenuto: nessun soggetto chiaro (--remove-bg per toglierlo comunque)"
 
 
+def pixel_art_scale(img: np.ndarray, max_cells: int = 300, max_colors: int = 128) -> int | None:
+    """Pixels per cell (1 or 2) for exact pixel art stored at its own size.
+
+    The grid detector only sees cells of 3 px or more. Lossless art with few colors
+    whose 2x2 blocks (or single pixels) are the cells is taken as it is, as long as
+    the chart stays under `max_cells` a side. JPEG photos have thousands of colors.
+    """
+    H, W = img.shape[:2]
+    if len(np.unique(img.reshape(-1, 3), axis=0)) > max_colors:
+        return None
+    for f in (2, 1):
+        if H % f or W % f or max(H, W) // f > max_cells:
+            continue
+        small = img[::f, ::f]
+        if np.array_equal(np.repeat(np.repeat(small, f, axis=0), f, axis=1), img):
+            return f
+    return None
+
+
 def is_chart(img: np.ndarray, gx: Axis, gy: Axis) -> bool:
     """True when the image really is made of cells on the detected grid.
 
@@ -951,6 +970,7 @@ def process(path: Path, args) -> None:
     img = load_rgb(path)
     H, W = img.shape[:2]
     photo = args.photo is not None
+    native = None
     if not photo:
         warnings = io.StringIO()
         try:
@@ -961,7 +981,13 @@ def process(path: Path, args) -> None:
             if args.grid or args.cell:
                 raise
             photo = True
-        if not photo:
+        # No grid of 3+ px cells: it may still be pixel art stored at 1-2 px per cell.
+        native = pixel_art_scale(img) if photo else None
+        if native:
+            photo = False
+            gx = Axis(0.0, float(native), W // native)
+            gy = Axis(0.0, float(native), H // native)
+        elif not photo:
             sys.stderr.write(warnings.getvalue())
     mask = None
     if photo:
@@ -971,6 +997,9 @@ def process(path: Path, args) -> None:
         gx, gy = photo_grid(W, H, width)
         how = "" if args.photo else " (larghezza scelta dai dettagli)"
         print(f"{path.name}: foto, {note} -> {gx.count} x {gy.count} quadrati{how}")
+    elif native:
+        print(f"{path.name}: pixel art {W}x{H}px, {native}px per quadrato -> "
+              f"{gx.count} x {gy.count} quadrati")
     else:
         print(f"{path.name}: {W}x{H}px -> {gx.count} x {gy.count} quadrati, "
               f"lato {gx.pitch:.3f} x {gy.pitch:.3f}px, primo bordo a "
@@ -1005,6 +1034,11 @@ def process(path: Path, args) -> None:
             cells = np.full_like(cells, 255)
             cells[~bg] = subject
             cells = despeckle(cells)
+    elif native:
+        # Exact colors, one per cell: nothing to clean up unless asked for fewer colors.
+        cells = img[::native, ::native].copy()
+        if args.colors:
+            cells = build_palette(cells, args.merge, args.colors)
     else:
         inner = args.inner
         if inner is None:

@@ -186,9 +186,26 @@ def test_chart_cleanup():
     assert not dropped and np.all(kept[15, 15] == red)
 
 
+def test_native_pixel_art():
+    """Pixel art saved at 1 or 2 px per cell (too small for the grid detector) is kept cell for cell."""
+    art = pixel_art(60, 40, 12)
+    for scale in (1, 2):
+        img = np.repeat(np.repeat(art, scale, axis=0), scale, axis=1)
+        assert gridify.pixel_art_scale(img) == scale
+    # a photo has far too many colors to be taken as pixel art
+    assert gridify.pixel_art_scale(np.asarray(fake_photo(120, 160).convert("RGB"))) is None
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d) / "sprite.png"
+        Image.fromarray(art).save(src)
+        assert gridify.main([str(src), "--no-pdf"]) == 0
+        out = Image.open(Path(d) / "sprite_clean.png")
+        assert out.size[0] >= 60 * 24
+
+
 if __name__ == "__main__":
     test_detection()
     test_outputs()
     test_photo_mode()
     test_chart_cleanup()
+    test_native_pixel_art()
     print("tutti i test ok")
