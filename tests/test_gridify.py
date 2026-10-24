@@ -198,8 +198,8 @@ def test_native_pixel_art():
         src = Path(d) / "sprite.png"
         Image.fromarray(art).save(src)
         assert gridify.main([str(src), "--no-pdf"]) == 0
-        out = Image.open(Path(d) / "sprite_clean.png")
-        assert out.size[0] >= 60 * 24
+        with Image.open(Path(d) / "sprite_clean.png") as out:  # closed before cleanup (Windows)
+            assert out.size[0] >= 60 * 24
 
 
 if __name__ == "__main__":
