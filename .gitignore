@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.stackdump
+# generated charts
+*_clean.png
+*_clean.pdf
+*_clean.svg
+*_overlay.png
