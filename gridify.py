@@ -900,6 +900,21 @@ def otsu(values: np.ndarray) -> float:
     return float(np.nanargmax(between)) / 255.0
 
 
+def equalize_light(g: np.ndarray) -> np.ndarray:
+    """Local contrast equalization (CLAHE) of a 0-1 gray image.
+
+    With one threshold for the whole photo, the shadow side of a close-up face or
+    animal turns into a solid black patch and its eyes and fur disappear. Evening
+    out the light region by region keeps those details; only truly dark areas stay
+    black. Left unchanged if scikit-image (installed with rembg) is missing.
+    """
+    try:
+        from skimage.exposure import equalize_adapthist
+    except ImportError:
+        return g
+    return equalize_adapthist(g, kernel_size=max(8, min(g.shape) // 6), clip_limit=0.01)
+
+
 def line_art(img: np.ndarray, mask: np.ndarray | None, cols: int, rows: int,
              detail: int) -> np.ndarray:
     """Black-on-white ink drawing of a photo, like the stencil charts found online.
@@ -914,7 +929,7 @@ def line_art(img: np.ndarray, mask: np.ndarray | None, cols: int, rows: int,
     sigma, dark_share, edge, cover = LINE_DETAIL[detail]
     size = (cols * LINE_PX, rows * LINE_PX)
     gray = ImageOps.autocontrast(Image.fromarray(img).convert("L").resize(size, Image.LANCZOS), cutoff=1)
-    g = np.asarray(gray) / 255.0
+    g = equalize_light(np.asarray(gray) / 255.0)
     subject = (np.ones(g.shape, bool) if mask is None else
                np.asarray(Image.fromarray(mask).resize(size, Image.BOX)) >= 128)
     dark = gaussian_filter(g, 1.0) < otsu(g[subject]) * dark_share
