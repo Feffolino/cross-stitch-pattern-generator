@@ -758,9 +758,9 @@ def remove_background(path: Path) -> tuple[np.ndarray, np.ndarray, float, float]
     """Photo subject on white, cropped to the subject, with its mask (0-255).
 
     Also returns the share of the photo the subject covers and how sure the cutout
-    is: the solid part of the mask over all of it. A clear subject (a person) gives
-    a crisp mask (~0.9); a building, a landscape or a small animal in grass gives a
-    faint, smeared one (0.2-0.6).
+    is: the solid part of the mask over all of it. A clear subject (a person, a dog
+    in a meadow) gives 0.65-0.95; a building, a landscape or a small animal hidden
+    in grass gives a faint, smeared one (0.2-0.6).
     """
     _skip_pymatting()
     try:
@@ -796,7 +796,7 @@ def prepare_photo(path: Path, img: np.ndarray, args) -> tuple[np.ndarray, np.nda
         if args.remove_bg:
             raise
         return img, None, f"sfondo tenuto: {e}"
-    if args.remove_bg or (sure >= 0.8 and 0.03 < share < 0.85):
+    if args.remove_bg or (sure >= 0.65 and 0.03 < share < 0.85):
         return cut, mask, f"sfondo tolto (il soggetto e' il {share:.0%} della foto)"
     return img, None, "sfondo tenuto: nessun soggetto chiaro (--remove-bg per toglierlo comunque)"
 
@@ -940,6 +940,42 @@ def line_art(img: np.ndarray, mask: np.ndarray | None, cols: int, rows: int,
     return despeckle(cells)
 
 
+def smooth_texture(img: np.ndarray) -> np.ndarray:
+    """Flatten grass, leaves and gravel while keeping strong outlines (bilateral filter).
+
+    In a scene with no single subject every blade of grass is an edge and would
+    become a black dash. Left unchanged if OpenCV (installed with rembg) is missing.
+    """
+    try:
+        import cv2
+    except ImportError:
+        return img
+    H, W = img.shape[:2]
+    if max(H, W) > 1000:  # the filter is slow on big photos; the chart needs far less
+        f = 1000 / max(H, W)
+        img = np.asarray(Image.fromarray(img).resize((round(W * f), round(H * f)), Image.LANCZOS))
+    out = np.ascontiguousarray(img)
+    for _ in range(3):
+        out = cv2.bilateralFilter(out, 9, 60, 9)
+    return out
+
+
+def drop_small_blobs(cells: np.ndarray, min_cells: int = 6) -> np.ndarray:
+    """Remove black specks and fill white holes smaller than `min_cells` cells.
+
+    Only for scenes without a subject: in a portrait an eye can be 2-3 cells.
+    """
+    from scipy import ndimage
+
+    ink = cells[..., 0] < 128
+    for value in (True, False):
+        region = ink == value
+        lab, n = ndimage.label(region)
+        sizes = ndimage.sum(region, lab, range(1, n + 1))
+        ink[np.isin(lab, np.nonzero(sizes < min_cells)[0] + 1)] = not value
+    return np.where(ink[..., None], np.uint8(20), np.uint8(255)) * np.ones(3, np.uint8)
+
+
 def auto_photo_width(img: np.ndarray, mask: np.ndarray | None) -> int:
     """Smallest chart width that keeps the drawing's detail.
 
@@ -1007,6 +1043,8 @@ def process(path: Path, args) -> None:
     mask = None
     if photo:
         img, mask, note = prepare_photo(path, img, args)
+        if mask is None and args.style == "linee":
+            img = smooth_texture(img)
         H, W = img.shape[:2]
         width = args.photo or auto_photo_width(img, mask)
         gx, gy = photo_grid(W, H, width)
@@ -1037,6 +1075,8 @@ def process(path: Path, args) -> None:
 
     if photo and args.style == "linee":
         cells = line_art(img, mask, gx.count, gy.count, args.detail)
+        if mask is None:
+            cells = drop_small_blobs(cells)
     elif photo:
         # Area average of each cell; a photo has no grid to keep or crop.
         cells = np.asarray(Image.fromarray(img).resize((gx.count, gy.count), Image.BOX))
