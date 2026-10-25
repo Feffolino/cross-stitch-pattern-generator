@@ -1,4 +1,4 @@
-"""Minimal vector PDF writer: filled rectangles, lines and Helvetica text.
+"""Minimal PDF writer: filled rectangles, lines, Helvetica text and RGB images.
 
 No external dependencies. Coordinates are in millimetres from the top-left corner.
 """
@@ -31,6 +31,7 @@ class Page:
     def __init__(self, w_mm: float, h_mm: float):
         self.w, self.h = w_mm, h_mm
         self.ops: list[bytes] = []
+        self.images: list = []  # PIL images drawn on this page, as /Im1, /Im2...
         self._fill = self._stroke = self._width = None
 
     def _y(self, y: float) -> float:
@@ -72,6 +73,12 @@ class Page:
         self.ops.append(b"BT /F1 %.2f Tf %.3f %.3f Td (" % (size, x * MM, self._y(base))
                         + _escape(s) + b") Tj ET")
 
+    def image(self, x, y, w, h, im):
+        """Draw a PIL image stretched to the w x h mm box whose top-left is (x, y)."""
+        self.images.append(im.convert("RGB"))
+        self.ops.append(f"q {w * MM:.3f} 0 0 {h * MM:.3f} {x * MM:.3f} {self._y(y + h):.3f} cm "
+                        f"/Im{len(self.images)} Do Q".encode())
+
 
 class Document:
     def __init__(self):
@@ -83,7 +90,8 @@ class Document:
         return p
 
     def save(self, path: Path) -> None:
-        # Object numbers: 1 catalog, 2 page tree, 3 font, then (page, content) pairs.
+        # Object numbers: 1 catalog, 2 page tree, 3 font, then (page, content) pairs,
+        # then one image XObject per drawn image.
         n = len(self.pages)
         kids = " ".join(f"{4 + 2 * i} 0 R" for i in range(n))
         objs = [
@@ -91,12 +99,21 @@ class Document:
             f"<< /Type /Pages /Kids [{kids}] /Count {n} >>".encode(),
             b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
         ]
+        images, next_obj = [], 4 + 2 * n
         for i, p in enumerate(self.pages):
+            xobj = " ".join(f"/Im{k + 1} {next_obj + len(images) + k} 0 R" for k in range(len(p.images)))
+            images += p.images
+            res = "/Font << /F1 3 0 R >>" + (f" /XObject << {xobj} >>" if xobj else "")
             objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {p.w * MM:.2f} {p.h * MM:.2f}] "
-                        f"/Resources << /Font << /F1 3 0 R >> >> /Contents {5 + 2 * i} 0 R >>".encode())
+                        f"/Resources << {res} >> /Contents {5 + 2 * i} 0 R >>".encode())
             data = zlib.compress(b"\n".join(p.ops))
             objs.append(b"<< /Length %d /Filter /FlateDecode >>\nstream\n" % len(data)
                         + data + b"\nendstream")
+        for im in images:
+            data = zlib.compress(im.tobytes(), 6)
+            objs.append(b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB "
+                        b"/BitsPerComponent 8 /Filter /FlateDecode /Length %d >>\nstream\n"
+                        % (im.width, im.height, len(data)) + data + b"\nendstream")
 
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
         offsets = []

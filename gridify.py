@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import io
 import math
 import sys
@@ -624,18 +625,27 @@ def pdf_sheet(page: Page, cells: np.ndarray, x0: int, y0: int, args) -> None:
 
 
 def pdf_whole(doc: Document, cells: np.ndarray, name: str, args) -> None:
-    """First page: the whole chart shrunk to one sheet, like the *_clean.png image."""
+    """First page: the *_clean.png image of the whole chart, on the same paper size as
+    the sheets, turned whichever way makes it largest."""
     rows, cols = cells.shape[:2]
-    w, h = PAGE_SIZES[args.page]
-    if cols > rows:
-        w, h = h, w
+    look = copy.copy(args)
+    look.px, look.numbers, look.grid_lines = 24, True, "full"  # exactly the saved clean image
+    clean = render_chart(cells, look)
+    w0, h0 = PAGE_SIZES[args.page]
+    fits = []
+    for w, h in ((w0, h0), (h0, w0)):
+        aw, ah = w - 2 * PDF_MARGIN, h - 2 * PDF_MARGIN - PDF_HEADER
+        fits.append((min(aw / clean.width, ah / clean.height), w, h))
+    scale, w, h = max(fits)
     page = doc.add_page(w, h)
     page.text(PDF_MARGIN, PDF_MARGIN + 5, f"{name} – schema intero, {cols} x {rows} quadrati", size=12)
-    aw = w - 2 * PDF_MARGIN - PDF_LABEL
-    ah = h - 2 * PDF_MARGIN - PDF_HEADER - PDF_LABEL
-    s = min(aw / cols, ah / rows)
-    pdf_grid(page, cells, PDF_MARGIN + PDF_LABEL, PDF_MARGIN + PDF_HEADER + PDF_LABEL,
-             s, 0, 0, args, label_size=min(7.0, max(4.0, s * 10 * 2.2)))
+    dw, dh = clean.width * scale, clean.height * scale
+    # Shrunk smoothly to 300 dpi, like a browser showing the big image: the grid
+    # becomes a light veil and the drawing stays readable.
+    px_w = round(dw / 25.4 * 300)
+    if px_w < clean.width:
+        clean = clean.resize((px_w, round(clean.height * px_w / clean.width)), Image.LANCZOS)
+    page.image((w - dw) / 2, PDF_MARGIN + PDF_HEADER, dw, dh, clean)
 
 
 def pdf_minimap(page: Page, cells: np.ndarray, sheets, current: int) -> None:
