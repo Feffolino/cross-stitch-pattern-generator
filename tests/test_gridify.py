@@ -124,6 +124,10 @@ def test_outputs():
         assert n_pages == 6, n_pages
         assert Image.open(Path(d) / "big_clean.png").size[0] > 150 * 24
         assert (Path(d) / "big_clean.svg").read_text().startswith("<svg")
+        # --overview adds one whole-chart page in front of the sheets
+        assert gridify.main([str(src), "--overview"]) == 0
+        pdf = (Path(d) / "big_clean.pdf").read_bytes()
+        assert int(pdf.split(b"/Count ")[1].split(b" ")[0]) == n_pages + 1
         assert gridify.main([str(src), "--mode", "overlay"]) == 0
         assert (Path(d) / "big_overlay.png").exists()
 

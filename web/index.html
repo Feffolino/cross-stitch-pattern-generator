@@ -125,6 +125,7 @@
         </div>
       </div>
       <div class="summary" id="summary"></div>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="overview"> aggiungi al PDF una pagina con lo schema intero</label>
       <button class="btn" id="pdf" disabled>Scarica PDF</button>
       <div class="notes" id="notes"></div>
     </div>
@@ -305,7 +306,11 @@ drop.addEventListener("drop", e => upload(e.dataTransfer.files[0]));
 document.addEventListener("dragover", e => e.preventDefault());
 document.addEventListener("drop", e => { e.preventDefault(); if (e.target !== drop) upload(e.dataTransfer.files[0]); });
 
-$("pdf").addEventListener("click", () => { window.location = "/api/pdf?" + params(); });
+$("pdf").addEventListener("click", () => {
+  const p = params();
+  if ($("overview").checked) p.set("overview", "1");
+  window.location = "/api/pdf?" + p;
+});
 labels();
 </script>
 </body>

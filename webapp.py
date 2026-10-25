@@ -47,6 +47,8 @@ def build_args(q: dict[str, str]):
         argv += ["--detail", q["detail"]]
     if q.get("colors"):
         argv += ["--colors", q["colors"]]
+    if q.get("overview") == "1":
+        argv.append("--overview")
     if q.get("bg") == "remove":
         argv.append("--remove-bg")
     elif q.get("bg") == "keep":

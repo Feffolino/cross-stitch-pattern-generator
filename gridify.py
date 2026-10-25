@@ -591,17 +591,16 @@ def pdf_cells(page: Page, cells: np.ndarray, ox: float, oy: float, s: float) -> 
                   s + (eps if r + 1 < rows else 0), fill=rgb)
 
 
-def pdf_sheet(page: Page, cells: np.ndarray, x0: int, y0: int, args) -> None:
-    """One sheet of the chart; x0/y0 = global index of its first column/row."""
+def pdf_grid(page: Page, cells: np.ndarray, ox: float, oy: float, s: float,
+             x0: int, y0: int, args, label_size: float = 7.0) -> None:
+    """Cells, grid and every-`major` numbers at `s` mm per cell, top-left at (ox, oy)."""
     rows, cols = cells.shape[:2]
-    s = args.cell_mm
-    ox, oy = PDF_MARGIN + PDF_LABEL, PDF_MARGIN + PDF_HEADER + PDF_LABEL
     pdf_cells(page, cells, ox, oy, s)
-
+    shrink = min(1.0, s / 3.0)  # thinner lines when cells are tiny (whole-chart page)
     segs = sorted(grid_segments(cells, args.major, x0, y0), key=lambda g: g[4])  # thick on top
     for vertical, k, a, b, thick, on_dark in segs:
         col, _ = segment_style(thick, on_dark, args)
-        width = PDF_THICK if thick else PDF_THIN
+        width = (PDF_THICK if thick else PDF_THIN) * shrink
         if vertical:
             page.line(ox + k * s, oy + a * s, ox + k * s, oy + b * s, col, width)
         else:
@@ -611,11 +610,32 @@ def pdf_sheet(page: Page, cells: np.ndarray, x0: int, y0: int, args) -> None:
         for k in range(cols + 1):
             g = x0 + k
             if g and g % args.major == 0:
-                page.text(ox + k * s, oy - PDF_LABEL / 2, str(g), size=7, align="center")
+                page.text(ox + k * s, oy - PDF_LABEL / 2, str(g), size=label_size, align="center")
         for k in range(rows + 1):
             g = y0 + k
             if g and g % args.major == 0:
-                page.text(ox - 1, oy + k * s, str(g), size=7, align="right")
+                page.text(ox - 1, oy + k * s, str(g), size=label_size, align="right")
+
+
+def pdf_sheet(page: Page, cells: np.ndarray, x0: int, y0: int, args) -> None:
+    """One sheet of the chart; x0/y0 = global index of its first column/row."""
+    pdf_grid(page, cells, PDF_MARGIN + PDF_LABEL, PDF_MARGIN + PDF_HEADER + PDF_LABEL,
+             args.cell_mm, x0, y0, args)
+
+
+def pdf_whole(doc: Document, cells: np.ndarray, name: str, args) -> None:
+    """First page: the whole chart shrunk to one sheet, like the *_clean.png image."""
+    rows, cols = cells.shape[:2]
+    w, h = PAGE_SIZES[args.page]
+    if cols > rows:
+        w, h = h, w
+    page = doc.add_page(w, h)
+    page.text(PDF_MARGIN, PDF_MARGIN + 5, f"{name} – schema intero, {cols} x {rows} quadrati", size=12)
+    aw = w - 2 * PDF_MARGIN - PDF_LABEL
+    ah = h - 2 * PDF_MARGIN - PDF_HEADER - PDF_LABEL
+    s = min(aw / cols, ah / rows)
+    pdf_grid(page, cells, PDF_MARGIN + PDF_LABEL, PDF_MARGIN + PDF_HEADER + PDF_LABEL,
+             s, 0, 0, args, label_size=min(7.0, max(4.0, s * 10 * 2.2)))
 
 
 def pdf_minimap(page: Page, cells: np.ndarray, sheets, current: int) -> None:
@@ -637,6 +657,8 @@ def write_pdf(path: Path, cells: np.ndarray, name: str, args) -> int:
     sheets = [(x0, y0, min(fx, cols - x0), min(fy, rows - y0))
               for y0 in range(0, rows, fy) for x0 in range(0, cols, fx)]
     doc = Document()
+    if getattr(args, "overview", False) and len(sheets) > 1:
+        pdf_whole(doc, cells, name, args)
     for i, (x0, y0, cw, ch) in enumerate(sheets):
         page = doc.add_page(w, h)
         if len(sheets) > 1:
@@ -729,6 +751,8 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--pdf", action=argparse.BooleanOptionalAction, default=True,
                    help="salva il PDF diviso in fogli (default si')")
     f.add_argument("--page", choices=sorted(PAGE_SIZES), default="a4", help="formato foglio")
+    f.add_argument("--overview", action="store_true",
+                   help="aggiunge una prima pagina con lo schema intero (come l'immagine clean)")
     f.add_argument("--cell-mm", type=float, default=3.0,
                    help="lato del quadrato stampato in mm (default 3)")
     return p
