@@ -624,19 +624,18 @@ def pdf_sheet(page: Page, cells: np.ndarray, x0: int, y0: int, args) -> None:
              args.cell_mm, x0, y0, args)
 
 
-def pdf_whole(doc: Document, cells: np.ndarray, name: str, args) -> None:
-    """First page: the *_clean.png image of the whole chart, on the same paper size as
-    the sheets, turned whichever way makes it largest."""
+def pdf_whole(doc: Document, cells: np.ndarray, name: str, args, w: float, h: float) -> None:
+    """First page: the *_clean.png image of the whole chart on a page exactly like the
+    sheets (w x h mm); the image is turned 90 degrees when that makes it larger."""
     rows, cols = cells.shape[:2]
     look = copy.copy(args)
     look.px, look.numbers, look.grid_lines = 24, True, "full"  # exactly the saved clean image
     clean = render_chart(cells, look)
-    w0, h0 = PAGE_SIZES[args.page]
-    fits = []
-    for w, h in ((w0, h0), (h0, w0)):
-        aw, ah = w - 2 * PDF_MARGIN, h - 2 * PDF_MARGIN - PDF_HEADER
-        fits.append((min(aw / clean.width, ah / clean.height), w, h))
-    scale, w, h = max(fits)
+    aw, ah = w - 2 * PDF_MARGIN, h - 2 * PDF_MARGIN - PDF_HEADER
+    turned = clean.rotate(90, expand=True)
+    if min(aw / turned.width, ah / turned.height) > min(aw / clean.width, ah / clean.height):
+        clean = turned
+    scale = min(aw / clean.width, ah / clean.height)
     page = doc.add_page(w, h)
     page.text(PDF_MARGIN, PDF_MARGIN + 5, f"{name} – schema intero, {cols} x {rows} quadrati", size=12)
     dw, dh = clean.width * scale, clean.height * scale
@@ -668,7 +667,7 @@ def write_pdf(path: Path, cells: np.ndarray, name: str, args) -> int:
               for y0 in range(0, rows, fy) for x0 in range(0, cols, fx)]
     doc = Document()
     if getattr(args, "overview", False) and len(sheets) > 1:
-        pdf_whole(doc, cells, name, args)
+        pdf_whole(doc, cells, name, args, w, h)
     for i, (x0, y0, cw, ch) in enumerate(sheets):
         page = doc.add_page(w, h)
         if len(sheets) > 1:
