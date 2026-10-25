@@ -39,3 +39,6 @@ desktop.ini
 *.bmp
 *.heic
 *.onnx
+
+# Local dev config
+.claude/

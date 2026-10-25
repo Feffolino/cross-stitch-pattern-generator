@@ -1092,7 +1092,19 @@ def despeckle(cells: np.ndarray, passes: int = 2) -> np.ndarray:
     return c
 
 
-def process(path: Path, args) -> None:
+@dataclass
+class Layout:
+    """What an image is and where its cells are, before colors are worked out."""
+    img: np.ndarray
+    gx: Axis
+    gy: Axis
+    kind: str                       # "chart", "native", "drawing" or "photo"
+    mask: np.ndarray | None = None  # photo subject mask when the background was removed
+    native: int | None = None       # pixels per cell for native pixel art
+
+
+def analyze(path: Path, args, say=print) -> Layout:
+    """Decide what the image is (chart, pixel art, drawing, photo) and lay out its grid."""
     img = load_rgb(path)
     H, W = img.shape[:2]
     photo = args.photo is not None
@@ -1113,8 +1125,8 @@ def process(path: Path, args) -> None:
             photo = False
             gx = Axis(0.0, float(native), W // native)
             gy = Axis(0.0, float(native), H // native)
-        elif not photo:
-            sys.stderr.write(warnings.getvalue())
+        elif not photo and warnings.getvalue():
+            say(warnings.getvalue().rstrip())
     mask = None
     drawing = photo and args.style == "linee" and is_line_drawing(img)
     if drawing:
@@ -1132,8 +1144,9 @@ def process(path: Path, args) -> None:
                     width = need
                     how = f" (larghezza scelta per rendere leggibile la scritta, lettere di {letters:.0f}px)"
         gx, gy = photo_grid(W, H, width)
-        print(f"{path.name}: disegno a linee -> {gx.count} x {gy.count} quadrati{how}")
-    elif photo:
+        say(f"{path.name}: disegno a linee -> {gx.count} x {gy.count} quadrati{how}")
+        return Layout(img, gx, gy, "drawing")
+    if photo:
         img, mask, note = prepare_photo(path, img, args)
         if mask is None and args.style == "linee":
             img = smooth_texture(img)
@@ -1141,30 +1154,26 @@ def process(path: Path, args) -> None:
         width = args.photo or auto_photo_width(img, mask)
         gx, gy = photo_grid(W, H, width)
         how = "" if args.photo else " (larghezza scelta dai dettagli)"
-        print(f"{path.name}: foto, {note} -> {gx.count} x {gy.count} quadrati{how}")
-    elif native:
-        print(f"{path.name}: pixel art {W}x{H}px, {native}px per quadrato -> "
-              f"{gx.count} x {gy.count} quadrati")
-    else:
-        print(f"{path.name}: {W}x{H}px -> {gx.count} x {gy.count} quadrati, "
-              f"lato {gx.pitch:.3f} x {gy.pitch:.3f}px, primo bordo a "
-              f"({gx.start % gx.pitch:.2f}, {gy.start % gy.pitch:.2f}), "
-              f"affidabilita' {min(gx.score, gy.score):.2f}")
-        if min(gx.score, gy.score) < 0.35:
-            print("  attenzione: griglia poco sicura, controlla il risultato "
-                  "(eventualmente usa --cell o --grid)", file=sys.stderr)
-    if args.info:
-        return
+        say(f"{path.name}: foto, {note} -> {gx.count} x {gy.count} quadrati{how}")
+        return Layout(img, gx, gy, "photo", mask=mask)
+    if native:
+        say(f"{path.name}: pixel art {W}x{H}px, {native}px per quadrato -> "
+            f"{gx.count} x {gy.count} quadrati")
+        return Layout(img, gx, gy, "native", native=native)
+    say(f"{path.name}: {W}x{H}px -> {gx.count} x {gy.count} quadrati, "
+        f"lato {gx.pitch:.3f} x {gy.pitch:.3f}px, primo bordo a "
+        f"({gx.start % gx.pitch:.2f}, {gy.start % gy.pitch:.2f}), "
+        f"affidabilita' {min(gx.score, gy.score):.2f}")
+    if min(gx.score, gy.score) < 0.35:
+        say("  attenzione: griglia poco sicura, controlla il risultato "
+            "(eventualmente usa --cell o --grid)")
+    return Layout(img, gx, gy, "chart")
 
-    out_dir = args.out or path.parent
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stem = out_dir / f"{path.stem}_{args.mode}"
 
-    if args.mode == "overlay":
-        render_overlay(img, gx, gy, args).save(stem.with_suffix(".png"))
-        print(f"  -> {stem.with_suffix('.png')}")
-        return
-
+def chart_cells(lay: Layout, args, say=print) -> np.ndarray:
+    """One color per cell for the laid-out image, cleaned up for stitching."""
+    img, gx, gy, mask, native = lay.img, lay.gx, lay.gy, lay.mask, lay.native
+    drawing, photo = lay.kind == "drawing", lay.kind == "photo"
     if drawing:
         cells = drawing_cells(img, gx.count, gy.count)
     elif photo and args.style == "linee":
@@ -1194,28 +1203,42 @@ def process(path: Path, args) -> None:
             inner = 0.5
             if cell_texture(img, gx, gy) > 40:
                 inner = 1.0
-                print("  quadrati con texture (perline/diamanti): colore preso da tutto il quadrato")
+                say("  quadrati con texture (perline/diamanti): colore preso da tutto il quadrato")
         cells = sample_cells(img, gx, gy, inner)
         extent = drawn_grid_extent(img, gx, gy) if args.crop else None
         if extent and (len(extent[0]), len(extent[1])) != cells.shape[:2]:
             rr, cc = extent
             cells = cells[rr.start:rr.stop, cc.start:cc.stop]
-            print(f"  griglia gia' disegnata: tengo righe {rr.start + 1}-{rr.stop}, "
-                  f"colonne {cc.start + 1}-{cc.stop} (--no-crop per tenere tutto)")
+            say(f"  griglia gia' disegnata: tengo righe {rr.start + 1}-{rr.stop}, "
+                f"colonne {cc.start + 1}-{cc.stop} (--no-crop per tenere tutto)")
         if args.colors or args.merge > 0:
             cells = build_palette(cells, args.merge, args.colors)
         if not args.colors:
             cells = fold_blends(cells)
             cells, dropped = drop_edge_text(cells)
             if dropped:
-                print("  tolta una scritta sul bordo (es. nome del sito)")
+                say("  tolta una scritta sul bordo (es. nome del sito)")
     if args.trim:
         cells, _, _ = trim_background(cells)
     n_colors = len(np.unique(cells.reshape(-1, 3), axis=0))
-    print(f"  schema {cells.shape[1]} x {cells.shape[0]} quadrati, {n_colors} colori")
+    say(f"  schema {cells.shape[1]} x {cells.shape[0]} quadrati, {n_colors} colori")
     if n_colors > 30 and not args.colors:
-        print("  molti colori: se sono sfumature di rumore prova --colors N o --merge 35",
-              file=sys.stderr)
+        say("  molti colori: se sono sfumature di rumore prova --colors N o --merge 35")
+    return cells
+
+
+def process(path: Path, args) -> None:
+    lay = analyze(path, args)
+    if args.info:
+        return
+    out_dir = args.out or path.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = out_dir / f"{path.stem}_{args.mode}"
+    if args.mode == "overlay":
+        render_overlay(lay.img, lay.gx, lay.gy, args).save(stem.with_suffix(".png"))
+        print(f"  -> {stem.with_suffix('.png')}")
+        return
+    cells = chart_cells(lay, args)
     render_chart(cells, args).save(stem.with_suffix(".png"))
     print(f"  -> {stem.with_suffix('.png')}")
     if args.pdf:

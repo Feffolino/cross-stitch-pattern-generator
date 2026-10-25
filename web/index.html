@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schemi punto croce</title>
+<style>
+  :root {
+    --bg: #f6f4f1; --panel: #ffffff; --ink: #1f1d1a; --muted: #6d6860;
+    --line: #e2ded7; --accent: #b4413c; --accent-ink: #ffffff; --chip: #f0ece6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1a18; --panel: #252321; --ink: #ece8e2; --muted: #a39d94;
+            --line: #3a3733; --accent: #e0726c; --accent-ink: #1b1a18; --chip: #2f2c29; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  .app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 20px; overflow-y: auto; }
+  h1 { font-size: 18px; margin: 0 0 16px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 10px; }
+  .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; cursor: pointer; color: var(--muted); }
+  .drop.over { border-color: var(--accent); color: var(--ink); }
+  .drop strong { color: var(--ink); display: block; word-break: break-all; }
+  .row { margin: 12px 0; }
+  .row label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 4px; }
+  .row label output { color: var(--muted); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .seg { display: flex; background: var(--chip); border-radius: 8px; padding: 3px; gap: 3px; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 6px 4px; border-radius: 6px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
+  .seg button.on { background: var(--panel); box-shadow: 0 1px 2px rgba(0,0,0,.15); font-weight: 600; }
+  .check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .summary { background: var(--chip); border-radius: 10px; padding: 12px; font-size: 14px; }
+  .summary b { font-size: 22px; display: block; }
+  .btn { width: 100%; margin-top: 18px; padding: 11px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .notes { font-size: 12px; color: var(--muted); white-space: pre-wrap; margin-top: 14px; }
+  main { position: relative; overflow: auto; padding: 20px; }
+  main .empty { height: 100%; display: grid; place-items: center; color: var(--muted); }
+  #preview { display: block; margin: 0 auto; image-rendering: pixelated; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  .zoom { position: sticky; top: 0; display: flex; gap: 8px; align-items: center; justify-content: flex-end; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .zoom input { width: 160px; }
+  .busy { position: fixed; top: 14px; right: 20px; background: var(--ink); color: var(--bg); padding: 6px 12px; border-radius: 20px; font-size: 13px; opacity: 0; transition: opacity .15s; }
+  .busy.on { opacity: .85; }
+  .hidden { display: none !important; }
+  @media (max-width: 760px) { .app { grid-template-columns: 1fr; height: auto; } aside { border-right: 0; border-bottom: 1px solid var(--line); } main { min-height: 70vh; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Schemi punto croce</h1>
+    <div class="drop" id="drop">
+      <strong id="fname">Trascina qui un'immagine</strong>
+      o clicca per sceglierla
+      <input type="file" id="file" accept="image/*" hidden>
+    </div>
+
+    <div id="controls" class="hidden">
+      <h2>Immagine</h2>
+      <div class="row">
+        <label>Tipo</label>
+        <div class="seg" data-name="kind">
+          <button data-v="auto" class="on">Automatico</button>
+          <button data-v="photo">Foto</button>
+        </div>
+      </div>
+      <div class="row photo-only">
+        <label>Stile</label>
+        <div class="seg" data-name="style">
+          <button data-v="linee" class="on">Linee</button>
+          <button data-v="colori">Colori</button>
+        </div>
+      </div>
+      <div class="row photo-only">
+        <label>Sfondo</label>
+        <div class="seg" data-name="bg">
+          <button data-v="auto" class="on">Auto</button>
+          <button data-v="remove">Togli</button>
+          <button data-v="keep">Tieni</button>
+        </div>
+      </div>
+      <div class="row lines-only">
+        <label>Dettaglio <output id="detail-v">medio</output></label>
+        <input type="range" id="detail" min="1" max="3" step="1" value="2">
+      </div>
+      <div class="row width-only">
+        <label>Larghezza <output id="width-v">auto</output></label>
+        <input type="range" id="width" min="40" max="450" step="10" value="120" disabled>
+        <span class="check"><input type="checkbox" id="width-auto" checked> automatica</span>
+      </div>
+      <div class="row colors-only">
+        <label>Colori <output id="colors-v">auto</output></label>
+        <input type="range" id="colors" min="2" max="16" step="1" value="4" disabled>
+        <span class="check"><input type="checkbox" id="colors-auto" checked> automatico</span>
+      </div>
+
+      <h2>Stampa</h2>
+      <div class="row">
+        <label>Quadrato stampato <output id="mm-v">3,0 mm</output></label>
+        <input type="range" id="mm" min="1.5" max="6" step="0.1" value="3">
+        <span class="check">piu' piccolo = meno fogli, stessi quadrati</span>
+      </div>
+      <div class="row">
+        <label>Foglio</label>
+        <div class="seg" data-name="page">
+          <button data-v="a4" class="on">A4</button>
+          <button data-v="a3">A3</button>
+        </div>
+      </div>
+      <div class="summary" id="summary"></div>
+      <button class="btn" id="pdf" disabled>Scarica PDF</button>
+      <div class="notes" id="notes"></div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div class="empty" id="empty">L'anteprima dello schema comparira' qui</div>
+    <div class="zoom hidden" id="zoombar">zoom <input type="range" id="zoom" min="20" max="200" value="100"></div>
+    <img id="preview" class="hidden" alt="anteprima dello schema">
+  </main>
+</div>
+<div class="busy" id="busy">calcolo...</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const state = { id: null, name: "", kind: "auto", style: "linee", bg: "auto", page: "a4", detected: null };
+let timer = null, ctrl = null;
+
+// segmented controls
+document.querySelectorAll(".seg").forEach(seg => seg.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  state[seg.dataset.name] = b.dataset.v;
+  if (seg.dataset.name === "kind" || seg.dataset.name === "style" || seg.dataset.name === "bg") { $("width-auto").checked = true; $("width").disabled = true; }
+  refresh();
+}));
+
+const detailNames = { 1: "poco", 2: "medio", 3: "molto" };
+function labels() {
+  $("detail-v").textContent = detailNames[$("detail").value];
+  $("width-v").textContent = $("width-auto").checked ? "auto" : $("width").value + " quadrati";
+  $("colors-v").textContent = $("colors-auto").checked ? "auto" : $("colors").value;
+  $("mm-v").textContent = Number($("mm").value).toFixed(1).replace(".", ",") + " mm";
+}
+["detail", "width", "colors", "mm"].forEach(id => $(id).addEventListener("input", () => { labels(); refresh(); }));
+["width-auto", "colors-auto"].forEach(id => $(id).addEventListener("change", () => {
+  $(id.replace("-auto", "")).disabled = $(id).checked; labels(); refresh();
+}));
+
+function visibility() {
+  const k = state.detected;
+  const photoLike = k === "photo" || k === "drawing" || state.kind === "photo";
+  document.querySelectorAll(".photo-only").forEach(e => e.classList.toggle("hidden", !(k === "photo" || state.kind === "photo")));
+  document.querySelectorAll(".lines-only").forEach(e => e.classList.toggle("hidden", !(k === "photo" && state.style === "linee")));
+  document.querySelectorAll(".width-only").forEach(e => e.classList.toggle("hidden", !photoLike));
+  document.querySelectorAll(".colors-only").forEach(e => e.classList.toggle("hidden", k === "drawing" || (k === "photo" && state.style === "linee")));
+}
+
+function params() {
+  const p = { id: state.id, kind: state.kind, style: state.style, bg: state.bg, page: state.page,
+              mm: $("mm").value, detail: $("detail").value, name: state.name };
+  const photoLike = state.detected === "photo" || state.detected === "drawing" || state.kind === "photo";
+  if (photoLike && !$("width-auto").checked) p.width = $("width").value;
+  if (!$("colors-auto").checked) p.colors = $("colors").value;
+  return new URLSearchParams(p);
+}
+
+function refresh() {
+  if (!state.id) return;
+  clearTimeout(timer);
+  timer = setTimeout(run, 250);
+}
+
+async function run() {
+  if (ctrl) ctrl.abort();
+  ctrl = new AbortController();
+  $("busy").classList.add("on");
+  try {
+    const r = await fetch("/api/preview?" + params(), { signal: ctrl.signal });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    state.detected = d.kind;
+    $("preview").src = "data:image/png;base64," + d.png;
+    $("preview").classList.remove("hidden"); $("empty").classList.add("hidden"); $("zoombar").classList.remove("hidden");
+    const kinds = { chart: "schema gia' fatto", native: "pixel art", drawing: "disegno a linee", photo: "foto" };
+    $("summary").innerHTML = `<b>${d.sheets} ${d.sheets === 1 ? "foglio" : "fogli"}</b>` +
+      `${d.cols} x ${d.rows} quadrati, ${d.colors} colori<br>ricamo ${d.size_cm[0]} x ${d.size_cm[1]} cm, fogli in ${d.orientation}<br>` +
+      `<span style="color:var(--muted)">${kinds[d.kind] || d.kind}</span>`;
+    if ($("width-auto").checked && (d.kind === "photo" || d.kind === "drawing")) $("width").value = d.cols;
+    $("notes").textContent = d.notes.join("\n");
+    $("pdf").disabled = false;
+    visibility(); labels(); zoom();
+  } catch (e) {
+    if (e.name !== "AbortError") $("notes").textContent = "Errore: " + e.message;
+  } finally {
+    $("busy").classList.remove("on");
+  }
+}
+
+let fitNext = true;  // a new image starts fitted to the window
+function zoom() {
+  const img = $("preview");
+  if (!img.naturalWidth) return;
+  if (fitNext) {
+    const fit = Math.round(($("main").clientWidth - 40) / img.naturalWidth * 100);
+    $("zoom").value = Math.max(20, Math.min(200, fit));
+    fitNext = false;
+  }
+  img.style.width = (img.naturalWidth * $("zoom").value / 100) + "px";
+}
+$("zoom").addEventListener("input", zoom);
+$("preview").addEventListener("load", zoom);
+
+async function upload(file) {
+  if (!file) return;
+  state.name = file.name; $("fname").textContent = file.name;
+  $("busy").classList.add("on");
+  const r = await fetch("/api/upload", { method: "POST", body: file, headers: { "X-Filename": file.name } });
+  const d = await r.json();
+  if (d.error) { $("notes").textContent = "Errore: " + d.error; $("busy").classList.remove("on"); return; }
+  state.id = d.id; state.detected = null; fitNext = true;
+  $("width-auto").checked = true; $("width").disabled = true;
+  $("controls").classList.remove("hidden");
+  labels(); run();
+}
+
+const drop = $("drop");
+drop.addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", e => upload(e.target.files[0]));
+["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => upload(e.dataTransfer.files[0]));
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => { e.preventDefault(); if (e.target !== drop) upload(e.dataTransfer.files[0]); });
+
+$("pdf").addEventListener("click", () => { window.location = "/api/pdf?" + params(); });
+labels();
+</script>
+</body>
+</html>

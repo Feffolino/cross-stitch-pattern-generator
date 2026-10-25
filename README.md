@@ -27,6 +27,15 @@ rembg 2.0.69 funziona con numpy 2.2 / Pillow 11; le versioni piu' nuove richiedo
 numpy >= 2.3 e Pillow >= 12, che possono entrare in conflitto con altri pacchetti.
 Il modello `u2net` (176 MB) viene scaricato al primo uso in `~/.u2net`.
 
+## Pagina web (consigliato)
+
+Doppio clic su `Schemi punto croce.bat` (oppure `python webapp.py`): si apre una
+pagina nel browser che gira solo su questo computer. Trascini l'immagine e vedi
+subito lo schema; con gli slider cambi larghezza, dettaglio, colori, sfondo e il
+lato del quadrato stampato. Il riquadro in basso dice quanti fogli servono e
+quanto viene grande il ricamo: un quadrato stampato piu' piccolo tiene gli stessi
+quadrati ma usa meno fogli. "Scarica PDF" salva lo schema da stampare.
+
 ## Uso veloce
 
 ```
