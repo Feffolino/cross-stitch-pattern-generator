@@ -541,6 +541,8 @@ def write_svg(path: Path, cells: np.ndarray, args) -> None:
 
 PAGE_SIZES = {"a4": (210.0, 297.0), "a3": (297.0, 420.0)}
 PHOTO_WIDTHS = (80, 100, 120, 140, 160)  # chart widths tried for a photo, simplest first
+TEXT_CELLS = 5.5        # letter height in cells for text in a drawing to be readable when stitched
+TEXT_MAX_WIDTH = 450    # never widen a drawing beyond this many cells just for its text
 LINE_PX = 6             # working pixels per cell for the line-art style
 # line-art detail level -> (line blur sigma px, dark fill as share of Otsu, edge strength, cell ink cover)
 LINE_DETAIL = {1: (2.0, 0.60, 0.035, 0.35), 2: (1.6, 0.75, 0.025, 0.30), 3: (1.2, 0.90, 0.018, 0.25)}
@@ -975,6 +977,42 @@ def drawing_cells(img: np.ndarray, cols: int, rows: int) -> np.ndarray:
     return np.where(ink[..., None], np.uint8(20), np.uint8(255)) * np.ones(3, np.uint8)
 
 
+def text_height(img: np.ndarray) -> float | None:
+    """Letter height in pixels of the smallest line of text in a drawing, or None.
+
+    Text = at least 4 separate small black shapes of about the same height, side by
+    side on one baseline with gaps narrower than a letter, drawn with thin strokes
+    (letters fill well under 60% of their box). Letters also differ from each other
+    in width or fill; a row of identical windows, fence posts or beads does not.
+    """
+    from scipy import ndimage
+
+    ink = np.asarray(Image.fromarray(img).convert("L")) < 128
+    lab, n = ndimage.label(ink)
+    boxes = []
+    for i, sl in enumerate(ndimage.find_objects(lab), 1):
+        h, w = sl[0].stop - sl[0].start, sl[1].stop - sl[1].start
+        fill = (lab[sl] == i).mean()
+        if 6 <= h <= 60 and 0.15 <= w / h <= 1.4 and fill < 0.6:
+            boxes.append((sl[1].start, sl[1].stop, (sl[0].start + sl[0].stop) / 2, h, fill))
+    boxes.sort()
+    heights = []
+    for k, (x0, x1, cy, h, fill) in enumerate(boxes):
+        line, right = [(h, x1 - x0, fill)], x1
+        for bx0, bx1, bcy, bh, bfill in boxes[k + 1:]:
+            if bx0 - right > 1.2 * h:
+                break
+            if abs(bcy - cy) < 0.4 * h and 0.67 < bh / h < 1.5:
+                line.append((bh, bx1 - bx0, bfill))
+                right = max(right, bx1)
+        if len(line) < 4:
+            continue
+        hs, ws, fs = (np.array(v, float) for v in zip(*line))
+        if ws.std() / ws.mean() > 0.1 or fs.std() / fs.mean() > 0.1:
+            heights.append(float(np.median(hs)))
+    return min(heights) if heights else None
+
+
 def smooth_texture(img: np.ndarray) -> np.ndarray:
     """Flatten grass, leaves and gravel while keeping strong outlines (bilateral filter).
 
@@ -1081,9 +1119,19 @@ def process(path: Path, args) -> None:
     drawing = photo and args.style == "linee" and is_line_drawing(img)
     if drawing:
         # Already black lines on white: no background removal, no filters.
-        width = args.photo or auto_photo_width(img, None, drawing=True)
+        how = ""
+        width = args.photo
+        if not width:
+            width = auto_photo_width(img, None, drawing=True)
+            how = " (larghezza scelta dai dettagli)"
+            letters = text_height(img)
+            if letters:
+                # Wide enough for letters TEXT_CELLS tall, rounded up to a thick line.
+                need = min(TEXT_MAX_WIDTH, math.ceil(TEXT_CELLS * W / letters / 10) * 10)
+                if need > width:
+                    width = need
+                    how = f" (larghezza scelta per rendere leggibile la scritta, lettere di {letters:.0f}px)"
         gx, gy = photo_grid(W, H, width)
-        how = "" if args.photo else " (larghezza scelta dai dettagli)"
         print(f"{path.name}: disegno a linee -> {gx.count} x {gy.count} quadrati{how}")
     elif photo:
         img, mask, note = prepare_photo(path, img, args)

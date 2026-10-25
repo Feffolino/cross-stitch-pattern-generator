@@ -218,6 +218,13 @@ def test_line_drawing():
     assert not ink[0].any() and not ink[:, 0].any()   # frame gone
     assert ink[24:66, 30].any() and ink[24, 30:90].any()  # house walls kept
 
+    # identical windows are not text; a real line of letters is, with its height
+    for x in range(170, 440, 40):
+        d.rectangle([x, 150, x + 25, 190], outline="black", width=2)
+    assert gridify.text_height(np.asarray(im)) is None
+    d.text((180, 250), "CASA FAMIGLIA", fill="black", font_size=24)
+    assert 10 <= gridify.text_height(np.asarray(im)) <= 24
+
 
 if __name__ == "__main__":
     test_detection()
