@@ -961,22 +961,27 @@ def is_line_drawing(img: np.ndarray) -> bool:
 def drawing_cells(img: np.ndarray, cols: int, rows: int) -> np.ndarray:
     """Copy the lines of a drawing onto the grid: a cell is black when a line crosses enough of it.
 
-    A frame drawn around the picture (black, touching all four edges) is dropped:
-    only its part in a strip along the edges, since the drawing may touch it.
+    A frame around the picture is dropped: thick black areas joined to the image
+    border. Lines of the drawing are thin, so they stay even where they touch it.
     """
     from scipy import ndimage
 
     size = (cols * LINE_PX, rows * LINE_PX)
     g = np.asarray(Image.fromarray(img).convert("L").resize(size, Image.LANCZOS))
-    ink = (g < 128).reshape(rows, LINE_PX, cols, LINE_PX).mean(axis=(1, 3)) >= 0.2
-    band = max(2, round(0.06 * min(rows, cols)))
-    yy, xx = np.mgrid[0:rows, 0:cols]
-    near_edge = np.minimum(np.minimum(yy, rows - 1 - yy), np.minimum(xx, cols - 1 - xx)) < band
-    lab, n = ndimage.label(ink)
-    for i in range(1, n + 1):
-        part = lab == i
-        if part[0].any() and part[-1].any() and part[:, 0].any() and part[:, -1].any():
-            ink[part & near_edge] = False
+    black = g < 128
+    # Opening wipes out anything thinner than k px (the drawn lines) and keeps solid areas.
+    k = max(5, round(0.015 * min(size)))
+    solid = ndimage.binary_opening(black, structure=np.ones((k, k)))
+    lab, n = ndimage.label(solid)
+    edge_ids = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
+    frame = np.isin(lab, edge_ids[edge_ids > 0])
+    frame = ndimage.binary_dilation(frame, iterations=2)  # include its anti-aliased rim
+    ink = (black & ~frame).reshape(rows, LINE_PX, cols, LINE_PX).mean(axis=(1, 3)) >= 0.2
+    if frame.any():
+        # Where the frame is thin its inner rim survives as a line hugging the edge:
+        # with a frame there, the outer 3 cells are frame, not drawing.
+        ink[:3] = ink[-3:] = False
+        ink[:, :3] = ink[:, -3:] = False
     return np.where(ink[..., None], np.uint8(20), np.uint8(255)) * np.ones(3, np.uint8)
 
 
