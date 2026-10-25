@@ -66,12 +66,26 @@ def layout(path: str, photo, style: str, remove_bg: bool, keep_bg: bool, page: s
     return lay, notes
 
 
+class Stale(Exception):
+    """A newer preview of the same image arrived while this one was waiting."""
+
+
+LATEST: dict[str, int] = {}  # image id -> newest preview request number seen
+
+
 def make(q: dict[str, str]):
     path = UPLOADS / q["id"]
     if not path.is_file():
         raise ValueError("immagine non trovata: ricaricala")
     args = build_args(q)
+    seq = int(q.get("seq", 0))
+    if seq:
+        LATEST[q["id"]] = max(LATEST.get(q["id"], 0), seq)
     with LOCK:
+        # The page drops superseded requests, but the server would still work through
+        # each of them in turn and the current one would wait behind them all.
+        if seq and seq < LATEST[q["id"]]:
+            raise Stale
         lay, notes = layout(str(path), args.photo, args.style, args.remove_bg, args.keep_bg, args.page)
         notes = list(notes)
         cells = gridify.chart_cells(lay, args, say=notes.append)
@@ -125,7 +139,10 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/":
                 self.send(200, (HERE / "web" / "index.html").read_bytes(), "text/html; charset=utf-8")
             elif url.path == "/api/preview":
-                self.send_json(preview(q))
+                try:
+                    self.send_json(preview(q))
+                except Stale:
+                    self.send_json({"stale": True})
             elif url.path == "/api/pdf":
                 args, _, cells, _ = make(q)
                 out = UPLOADS / f"{q['id']}.pdf"

@@ -49,8 +49,12 @@
   .tb { border: 0; background: var(--chip); color: var(--ink); border-radius: 8px; width: 32px; height: 32px; font: inherit; font-size: 17px; cursor: pointer; }
   .tb.wide { width: auto; padding: 0 12px; font-size: 13px; }
   .tb:hover { background: var(--line); }
-  .busy { position: fixed; top: 14px; right: 20px; background: var(--ink); color: var(--bg); padding: 6px 12px; border-radius: 20px; font-size: 13px; opacity: 0; transition: opacity .15s; }
-  .busy.on { opacity: .85; }
+  .busy { position: fixed; top: 50%; left: calc(50% + 160px); transform: translate(-50%, -50%); z-index: 6;
+          background: var(--ink); color: var(--bg); padding: 12px 20px; border-radius: 24px; font-size: 15px;
+          opacity: 0; pointer-events: none; transition: opacity .15s; box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+  .busy.on { opacity: .9; }
+  main.working #preview { opacity: .45; transition: opacity .15s; }
+  @media (max-width: 760px) { .busy { left: 50%; } }
   .hidden { display: none !important; }
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; height: auto; }
@@ -148,7 +152,7 @@
     <img id="preview" class="hidden" alt="anteprima dello schema" draggable="false">
   </main>
 </div>
-<div class="busy" id="busy">calcolo...</div>
+<div class="busy" id="busy">Calcolo in corso&hellip;</div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -200,13 +204,17 @@ function refresh() {
   timer = setTimeout(run, 250);
 }
 
+let seq = 0;
 async function run() {
   if (ctrl) ctrl.abort();
   ctrl = new AbortController();
-  $("busy").classList.add("on");
+  const mine = ++seq;
+  busy(true);
   try {
-    const r = await fetch("/api/preview?" + params(), { signal: ctrl.signal });
+    const p = params(); p.set("seq", mine);
+    const r = await fetch("/api/preview?" + p, { signal: ctrl.signal });
     const d = await r.json();
+    if (d.stale || mine !== seq) return;   // a newer request is on its way
     if (d.error) throw new Error(d.error);
     state.detected = d.kind;
     $("preview").src = "data:image/png;base64," + d.png;
@@ -223,8 +231,13 @@ async function run() {
   } catch (e) {
     if (e.name !== "AbortError") $("notes").textContent = "Errore: " + e.message;
   } finally {
-    $("busy").classList.remove("on");
+    if (mine === seq) busy(false);
   }
+}
+
+function busy(on) {
+  $("busy").classList.toggle("on", on);
+  $("main").classList.toggle("working", on);
 }
 
 // ---- preview zoom and pan: wheel zooms at the pointer, drag moves, toolbar always in reach
