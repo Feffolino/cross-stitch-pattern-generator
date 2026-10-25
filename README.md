@@ -35,7 +35,8 @@ python gridify.py immagine.jpg
 
 Il programma capisce da solo se l'immagine e' uno schema gia' fatto (lo ridisegna
 pulito), pixel art salvata a grandezza naturale (1 pixel = 1 quadrato, fino a 300
-quadrati per lato) oppure una foto normale (la trasforma in schema). Le scritte
+quadrati per lato), un disegno a linee come le pagine da colorare (copia le linee e
+toglie la cornice) oppure una foto normale (la trasforma in schema). Le scritte
 lungo un bordo (nome del sito) negli schemi trovati online vengono tolte.
 
 ### Foto normali

@@ -202,10 +202,28 @@ def test_native_pixel_art():
             assert out.size[0] >= 60 * 24
 
 
+def test_line_drawing():
+    """A coloring page keeps its lines, loses its frame, and is not taken for a photo."""
+    im = Image.new("RGB", (600, 400), "black")
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([12, 12, 588, 388], radius=30, fill="white")   # black frame outside
+    d.rectangle([150, 120, 450, 330], outline="black", width=3)        # house
+    d.line([(150, 120), (300, 50), (450, 120)], fill="black", width=3)  # roof
+    d.line([(20, 300), (150, 330)], fill="black", width=3)              # path touching nothing
+    img = np.asarray(im)
+    assert gridify.is_line_drawing(img)
+    assert not gridify.is_line_drawing(np.asarray(fake_photo().convert("RGB")))
+    cells = gridify.drawing_cells(img, 120, 80)
+    ink = cells[..., 0] < 128
+    assert not ink[0].any() and not ink[:, 0].any()   # frame gone
+    assert ink[24:66, 30].any() and ink[24, 30:90].any()  # house walls kept
+
+
 if __name__ == "__main__":
     test_detection()
     test_outputs()
     test_photo_mode()
     test_chart_cleanup()
     test_native_pixel_art()
+    test_line_drawing()
     print("tutti i test ok")

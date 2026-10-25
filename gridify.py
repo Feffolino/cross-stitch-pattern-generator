@@ -940,6 +940,41 @@ def line_art(img: np.ndarray, mask: np.ndarray | None, cols: int, rows: int,
     return despeckle(cells)
 
 
+def is_line_drawing(img: np.ndarray) -> bool:
+    """True for black-on-white artwork such as a coloring page.
+
+    Nearly every pixel is close to white or to black and hardly any has color;
+    photos (even old black-and-white ones) are full of mid grays.
+    """
+    a = img.astype(np.int16)
+    g = a.mean(axis=2)
+    sat = a.max(axis=2) - a.min(axis=2)
+    return bool(((g > 200) | (g < 70)).mean() > 0.85 and (sat < 40).mean() > 0.9
+                and (g > 200).mean() > 0.5)
+
+
+def drawing_cells(img: np.ndarray, cols: int, rows: int) -> np.ndarray:
+    """Copy the lines of a drawing onto the grid: a cell is black when a line crosses enough of it.
+
+    A frame drawn around the picture (black, touching all four edges) is dropped:
+    only its part in a strip along the edges, since the drawing may touch it.
+    """
+    from scipy import ndimage
+
+    size = (cols * LINE_PX, rows * LINE_PX)
+    g = np.asarray(Image.fromarray(img).convert("L").resize(size, Image.LANCZOS))
+    ink = (g < 128).reshape(rows, LINE_PX, cols, LINE_PX).mean(axis=(1, 3)) >= 0.2
+    band = max(2, round(0.06 * min(rows, cols)))
+    yy, xx = np.mgrid[0:rows, 0:cols]
+    near_edge = np.minimum(np.minimum(yy, rows - 1 - yy), np.minimum(xx, cols - 1 - xx)) < band
+    lab, n = ndimage.label(ink)
+    for i in range(1, n + 1):
+        part = lab == i
+        if part[0].any() and part[-1].any() and part[:, 0].any() and part[:, -1].any():
+            ink[part & near_edge] = False
+    return np.where(ink[..., None], np.uint8(20), np.uint8(255)) * np.ones(3, np.uint8)
+
+
 def smooth_texture(img: np.ndarray) -> np.ndarray:
     """Flatten grass, leaves and gravel while keeping strong outlines (bilateral filter).
 
@@ -976,7 +1011,7 @@ def drop_small_blobs(cells: np.ndarray, min_cells: int = 6) -> np.ndarray:
     return np.where(ink[..., None], np.uint8(20), np.uint8(255)) * np.ones(3, np.uint8)
 
 
-def auto_photo_width(img: np.ndarray, mask: np.ndarray | None) -> int:
+def auto_photo_width(img: np.ndarray, mask: np.ndarray | None, drawing: bool = False) -> int:
     """Smallest chart width that keeps the drawing's detail.
 
     The line-art drawing at PHOTO_WIDTHS is compared with a 200-cell reference; the
@@ -986,7 +1021,9 @@ def auto_photo_width(img: np.ndarray, mask: np.ndarray | None) -> int:
     H, W = img.shape[:2]
 
     def ink(cols: int) -> np.ndarray:
-        return line_art(img, mask, cols, max(1, round(H * cols / W)), 2)[..., 0] < 128
+        rows = max(1, round(H * cols / W))
+        cells = drawing_cells(img, cols, rows) if drawing else line_art(img, mask, cols, rows, 2)
+        return cells[..., 0] < 128
 
     ref = ink(200)
     for cols in PHOTO_WIDTHS:
@@ -1041,7 +1078,14 @@ def process(path: Path, args) -> None:
         elif not photo:
             sys.stderr.write(warnings.getvalue())
     mask = None
-    if photo:
+    drawing = photo and args.style == "linee" and is_line_drawing(img)
+    if drawing:
+        # Already black lines on white: no background removal, no filters.
+        width = args.photo or auto_photo_width(img, None, drawing=True)
+        gx, gy = photo_grid(W, H, width)
+        how = "" if args.photo else " (larghezza scelta dai dettagli)"
+        print(f"{path.name}: disegno a linee -> {gx.count} x {gy.count} quadrati{how}")
+    elif photo:
         img, mask, note = prepare_photo(path, img, args)
         if mask is None and args.style == "linee":
             img = smooth_texture(img)
@@ -1073,7 +1117,9 @@ def process(path: Path, args) -> None:
         print(f"  -> {stem.with_suffix('.png')}")
         return
 
-    if photo and args.style == "linee":
+    if drawing:
+        cells = drawing_cells(img, gx.count, gy.count)
+    elif photo and args.style == "linee":
         cells = line_art(img, mask, gx.count, gy.count, args.detail)
         if mask is None:
             cells = drop_small_blobs(cells)
