@@ -37,7 +37,8 @@
   .notes { font-size: 12px; color: var(--muted); white-space: pre-wrap; margin-top: 14px; }
   main { position: relative; overflow: auto; padding: 20px; }
   main .empty { height: 100%; display: grid; place-items: center; color: var(--muted); }
-  #preview { display: block; margin: 0 auto; image-rendering: pixelated; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  #preview { display: block; margin: 0 auto; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  #preview.crisp { image-rendering: pixelated; } /* zoomed past 100%: sharp cells; below: smooth like the saved image */
   main.grab { cursor: grab; } main.grabbing { cursor: grabbing; user-select: none; }
   .toolbar { position: fixed; right: 20px; bottom: 20px; z-index: 5; display: flex; align-items: center; gap: 6px;
              background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
@@ -134,8 +135,8 @@
     <div class="toolbar hidden" id="zoombar">
       <div class="seg" data-name="grid" title="Griglia nell'anteprima (il PDF ha sempre la griglia completa)">
         <button data-v="none">Senza griglia</button>
-        <button data-v="major" class="on">Ogni 10</button>
-        <button data-v="full">Completa</button>
+        <button data-v="major">Ogni 10</button>
+        <button data-v="full" class="on">Completa</button>
       </div>
       <span class="sep"></span>
       <button class="tb" id="zout" title="Rimpicciolisci (-)">&minus;</button>
@@ -150,7 +151,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const state = { id: null, name: "", kind: "auto", style: "linee", bg: "auto", page: "a4", grid: "major", detected: null };
+const state = { id: null, name: "", kind: "auto", style: "linee", bg: "auto", page: "a4", grid: "full", detected: null };
 let timer = null, ctrl = null;
 
 // segmented controls
@@ -243,10 +244,11 @@ function setScale(s, cx, cy) {
   const fx = (cx - r.left) / r.width, fy = (cy - r.top) / r.height;
   scale = s;
   img.style.width = Math.round(img.naturalWidth * s) + "px";
+  img.classList.toggle("crisp", s * devicePixelRatio >= 1);
   const r2 = img.getBoundingClientRect();
   main.scrollLeft += (r2.left + fx * r2.width) - cx;
   main.scrollTop += (r2.top + fy * r2.height) - cy;
-  $("zpct").textContent = Math.round(s * 100 * devicePixelRatio) + "%";
+  $("zpct").textContent = Math.round(s / fitScale() * 100) + "%";  // 100% = fitted to the window
 }
 function zoom() {
   if (!img.naturalWidth) return;

@@ -79,11 +79,13 @@ def make(q: dict[str, str]):
 def preview(q: dict[str, str]) -> dict:
     args, lay, cells, notes = make(q)
     rows, cols = cells.shape[:2]
-    args.px = max(4, min(14, 1600 // max(cols, 1)))  # keep the preview image a sensible size
+    # Same look as the *_clean.png the command line writes (24 px cells); the browser
+    # scales it down smoothly. Very wide charts get smaller cells to stay quick.
+    args.px = max(6, min(24, 9000 // max(cols, 1)))
     args.numbers = True
-    args.grid_lines = q.get("grid") if q.get("grid") in ("none", "major", "full") else "major"
+    args.grid_lines = q.get("grid") if q.get("grid") in ("none", "major", "full") else "full"
     png = io.BytesIO()
-    gridify.render_chart(cells, args).save(png, "PNG", optimize=False)
+    gridify.render_chart(cells, args).save(png, "PNG", compress_level=1)
     (w, h), fx, fy = gridify.plan_sheets(cols, rows, args)
     sheets = math.ceil(cols / fx) * math.ceil(rows / fy)
     return {
