@@ -464,7 +464,10 @@ def render_chart(cells: np.ndarray, args) -> Image.Image:
     canvas.paste(art, (margin, margin))
     d = ImageDraw.Draw(canvas)
     segs = sorted(grid_segments(cells, args.major), key=lambda s: s[4])  # thick on top
+    grid = getattr(args, "grid_lines", "full")  # "full", "major" (every --major only) or "none"
     for vertical, k, a, b, thick, on_dark in segs:
+        if grid == "none" or (grid == "major" and not thick):
+            continue
         col, w = segment_style(thick, on_dark, args)
         p = margin + k * px - w // 2
         lo, hi = margin + a * px, margin + b * px

@@ -38,12 +38,27 @@
   main { position: relative; overflow: auto; padding: 20px; }
   main .empty { height: 100%; display: grid; place-items: center; color: var(--muted); }
   #preview { display: block; margin: 0 auto; image-rendering: pixelated; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
-  .zoom { position: sticky; top: 0; display: flex; gap: 8px; align-items: center; justify-content: flex-end; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
-  .zoom input { width: 160px; }
+  main.grab { cursor: grab; } main.grabbing { cursor: grabbing; user-select: none; }
+  .toolbar { position: fixed; right: 20px; bottom: 20px; z-index: 5; display: flex; align-items: center; gap: 6px;
+             background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+             box-shadow: 0 4px 16px rgba(0,0,0,.18); font-size: 13px; }
+  .toolbar .seg { width: 270px; }
+  .toolbar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 2px; }
+  .toolbar output { min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .tb { border: 0; background: var(--chip); color: var(--ink); border-radius: 8px; width: 32px; height: 32px; font: inherit; font-size: 17px; cursor: pointer; }
+  .tb.wide { width: auto; padding: 0 12px; font-size: 13px; }
+  .tb:hover { background: var(--line); }
   .busy { position: fixed; top: 14px; right: 20px; background: var(--ink); color: var(--bg); padding: 6px 12px; border-radius: 20px; font-size: 13px; opacity: 0; transition: opacity .15s; }
   .busy.on { opacity: .85; }
   .hidden { display: none !important; }
-  @media (max-width: 760px) { .app { grid-template-columns: 1fr; height: auto; } aside { border-right: 0; border-bottom: 1px solid var(--line); } main { min-height: 70vh; } }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; height: auto; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); }
+    main { height: 80vh; }
+    /* stacked layout: keep the toolbar inside the preview instead of over the controls */
+    .toolbar { position: sticky; left: 0; bottom: 8px; margin: 10px auto 0; width: max-content; max-width: 100%; flex-wrap: wrap; }
+    .toolbar .seg { width: 230px; }
+  }
 </style>
 </head>
 <body>
@@ -116,15 +131,26 @@
 
   <main id="main">
     <div class="empty" id="empty">L'anteprima dello schema comparira' qui</div>
-    <div class="zoom hidden" id="zoombar">zoom <input type="range" id="zoom" min="20" max="200" value="100"></div>
-    <img id="preview" class="hidden" alt="anteprima dello schema">
+    <div class="toolbar hidden" id="zoombar">
+      <div class="seg" data-name="grid" title="Griglia nell'anteprima (il PDF ha sempre la griglia completa)">
+        <button data-v="none">Senza griglia</button>
+        <button data-v="major" class="on">Ogni 10</button>
+        <button data-v="full">Completa</button>
+      </div>
+      <span class="sep"></span>
+      <button class="tb" id="zout" title="Rimpicciolisci (-)">&minus;</button>
+      <output id="zpct">100%</output>
+      <button class="tb" id="zin" title="Ingrandisci (+)">+</button>
+      <button class="tb wide" id="zfit" title="Adatta alla finestra (0 o doppio clic)">Adatta</button>
+    </div>
+    <img id="preview" class="hidden" alt="anteprima dello schema" draggable="false">
   </main>
 </div>
 <div class="busy" id="busy">calcolo...</div>
 
 <script>
 const $ = id => document.getElementById(id);
-const state = { id: null, name: "", kind: "auto", style: "linee", bg: "auto", page: "a4", detected: null };
+const state = { id: null, name: "", kind: "auto", style: "linee", bg: "auto", page: "a4", grid: "major", detected: null };
 let timer = null, ctrl = null;
 
 // segmented controls
@@ -158,7 +184,7 @@ function visibility() {
 }
 
 function params() {
-  const p = { id: state.id, kind: state.kind, style: state.style, bg: state.bg, page: state.page,
+  const p = { id: state.id, kind: state.kind, style: state.style, bg: state.bg, page: state.page, grid: state.grid,
               mm: $("mm").value, detail: $("detail").value, name: state.name };
   const photoLike = state.detected === "photo" || state.detected === "drawing" || state.kind === "photo";
   if (photoLike && !$("width-auto").checked) p.width = $("width").value;
@@ -183,6 +209,7 @@ async function run() {
     state.detected = d.kind;
     $("preview").src = "data:image/png;base64," + d.png;
     $("preview").classList.remove("hidden"); $("empty").classList.add("hidden"); $("zoombar").classList.remove("hidden");
+    main.classList.add("grab");
     const kinds = { chart: "schema gia' fatto", native: "pixel art", drawing: "disegno a linee", photo: "foto" };
     $("summary").innerHTML = `<b>${d.sheets} ${d.sheets === 1 ? "foglio" : "fogli"}</b>` +
       `${d.cols} x ${d.rows} quadrati, ${d.colors} colori<br>ricamo ${d.size_cm[0]} x ${d.size_cm[1]} cm, fogli in ${d.orientation}<br>` +
@@ -198,19 +225,61 @@ async function run() {
   }
 }
 
-let fitNext = true;  // a new image starts fitted to the window
-function zoom() {
-  const img = $("preview");
-  if (!img.naturalWidth) return;
-  if (fitNext) {
-    const fit = Math.round(($("main").clientWidth - 40) / img.naturalWidth * 100);
-    $("zoom").value = Math.max(20, Math.min(200, fit));
-    fitNext = false;
-  }
-  img.style.width = (img.naturalWidth * $("zoom").value / 100) + "px";
+// ---- preview zoom and pan: wheel zooms at the pointer, drag moves, toolbar always in reach
+let fitNext = true;   // a new image starts fitted to the window
+let scale = 1;        // displayed px per image px
+const main = $("main"), img = $("preview");
+
+function fitScale() {
+  return Math.min((main.clientWidth - 40) / img.naturalWidth, (main.clientHeight - 90) / img.naturalHeight);
 }
-$("zoom").addEventListener("input", zoom);
-$("preview").addEventListener("load", zoom);
+function setScale(s, cx, cy) {
+  if (!img.naturalWidth) return;
+  s = Math.max(0.05, Math.min(8, s));
+  // keep the image point under (cx, cy) in place
+  const r = img.getBoundingClientRect();
+  cx ??= main.getBoundingClientRect().left + main.clientWidth / 2;
+  cy ??= main.getBoundingClientRect().top + main.clientHeight / 2;
+  const fx = (cx - r.left) / r.width, fy = (cy - r.top) / r.height;
+  scale = s;
+  img.style.width = Math.round(img.naturalWidth * s) + "px";
+  const r2 = img.getBoundingClientRect();
+  main.scrollLeft += (r2.left + fx * r2.width) - cx;
+  main.scrollTop += (r2.top + fy * r2.height) - cy;
+  $("zpct").textContent = Math.round(s * 100 * devicePixelRatio) + "%";
+}
+function zoom() {
+  if (!img.naturalWidth) return;
+  if (fitNext) { fitNext = false; setScale(fitScale()); } else setScale(scale);
+}
+img.addEventListener("load", zoom);
+$("zin").addEventListener("click", () => setScale(scale * 1.25));
+$("zout").addEventListener("click", () => setScale(scale / 1.25));
+$("zfit").addEventListener("click", () => setScale(fitScale()));
+img.addEventListener("dblclick", () => setScale(fitScale()));
+main.addEventListener("wheel", e => {
+  if (!img.naturalWidth || img.classList.contains("hidden")) return;
+  e.preventDefault();
+  setScale(scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
+}, { passive: false });
+let drag = null;
+main.addEventListener("mousedown", e => {
+  if (e.button !== 0 || e.target.closest(".toolbar")) return;
+  drag = { x: e.clientX, y: e.clientY, l: main.scrollLeft, t: main.scrollTop };
+  main.classList.add("grabbing");
+});
+window.addEventListener("mousemove", e => {
+  if (!drag) return;
+  main.scrollLeft = drag.l - (e.clientX - drag.x);
+  main.scrollTop = drag.t - (e.clientY - drag.y);
+});
+window.addEventListener("mouseup", () => { drag = null; main.classList.remove("grabbing"); });
+window.addEventListener("keydown", e => {
+  if (e.target.closest("input")) return;
+  if (e.key === "+" || e.key === "=") setScale(scale * 1.25);
+  else if (e.key === "-") setScale(scale / 1.25);
+  else if (e.key === "0") setScale(fitScale());
+});
 
 async function upload(file) {
   if (!file) return;

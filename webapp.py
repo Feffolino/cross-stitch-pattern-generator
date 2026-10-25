@@ -81,6 +81,7 @@ def preview(q: dict[str, str]) -> dict:
     rows, cols = cells.shape[:2]
     args.px = max(4, min(14, 1600 // max(cols, 1)))  # keep the preview image a sensible size
     args.numbers = True
+    args.grid_lines = q.get("grid") if q.get("grid") in ("none", "major", "full") else "major"
     png = io.BytesIO()
     gridify.render_chart(cells, args).save(png, "PNG", optimize=False)
     (w, h), fx, fy = gridify.plan_sheets(cols, rows, args)
