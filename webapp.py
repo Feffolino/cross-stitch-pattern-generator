@@ -49,6 +49,10 @@ def build_args(q: dict[str, str]):
         argv += ["--colors", q["colors"]]
     if q.get("overview") == "1":
         argv.append("--overview")
+    if q.get("contrast") in ("1", "2", "3"):
+        argv += ["--contrast", q["contrast"]]
+    if q.get("onepage") == "1":
+        argv.append("--one-page")
     if q.get("bg") == "remove":
         argv.append("--remove-bg")
     elif q.get("bg") == "keep":
@@ -102,6 +106,11 @@ def preview(q: dict[str, str]) -> dict:
     args.grid_lines = q.get("grid") if q.get("grid") in ("none", "major", "full") else "full"
     png = io.BytesIO()
     gridify.render_chart(cells, args).save(png, "PNG", compress_level=1)
+    if args.one_page:
+        args.cell_mm = gridify.fit_one_page(cols, rows, args)
+        if args.cell_mm < gridify.SMALL_CELL_MM:
+            notes.append(f"quadrato di {args.cell_mm:g} mm: difficile da leggere, "
+                         f"prova il foglio A3 o un ritaglio")
     (w, h), fx, fy = gridify.plan_sheets(cols, rows, args)
     sheets = math.ceil(cols / fx) * math.ceil(rows / fy)
     return {
@@ -112,6 +121,7 @@ def preview(q: dict[str, str]) -> dict:
         "sheets": sheets,
         "orientation": "verticale" if w < h else "orizzontale",
         "size_cm": [round(cols * args.cell_mm / 10, 1), round(rows * args.cell_mm / 10, 1)],
+        "mm": args.cell_mm,
         "notes": notes,
     }
 

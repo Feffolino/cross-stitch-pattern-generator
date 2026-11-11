@@ -120,6 +120,15 @@
         <label>Quadrato stampato <output id="mm-v">3,0 mm</output></label>
         <input type="range" id="mm" min="1.5" max="6" step="0.1" value="3">
         <span class="check">piu' piccolo = meno fogli, stessi quadrati</span>
+        <span class="check"><input type="checkbox" id="onepage"> tutto in un foglio (rimpicciolisce il quadrato)</span>
+      </div>
+      <div class="row">
+        <label>Griglia</label>
+        <div class="seg" data-name="contrast" title="Quanto si vedono le righe tra i quadrati, nel PDF e nell'anteprima">
+          <button data-v="1">Leggera</button>
+          <button data-v="2" class="on">Media</button>
+          <button data-v="3">Forte</button>
+        </div>
       </div>
       <div class="row">
         <label>Foglio</label>
@@ -156,7 +165,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const state = { id: null, name: "", kind: "auto", style: "linee", bg: "auto", page: "a4", grid: "full", detected: null };
+const state = { id: null, name: "", kind: "auto", style: "linee", bg: "auto", page: "a4", grid: "full", contrast: "2", detected: null };
 let timer = null, ctrl = null;
 
 // segmented controls
@@ -176,6 +185,7 @@ function labels() {
   $("mm-v").textContent = Number($("mm").value).toFixed(1).replace(".", ",") + " mm";
 }
 ["detail", "width", "colors", "mm"].forEach(id => $(id).addEventListener("input", () => { labels(); refresh(); }));
+$("onepage").addEventListener("change", refresh);
 ["width-auto", "colors-auto"].forEach(id => $(id).addEventListener("change", () => {
   $(id.replace("-auto", "")).disabled = $(id).checked; labels(); refresh();
 }));
@@ -191,10 +201,11 @@ function visibility() {
 
 function params() {
   const p = { id: state.id, kind: state.kind, style: state.style, bg: state.bg, page: state.page, grid: state.grid,
-              mm: $("mm").value, detail: $("detail").value, name: state.name };
+              contrast: state.contrast, mm: $("mm").value, detail: $("detail").value, name: state.name };
   const photoLike = state.detected === "photo" || state.detected === "drawing" || state.kind === "photo";
   if (photoLike && !$("width-auto").checked) p.width = $("width").value;
   if (!$("colors-auto").checked) p.colors = $("colors").value;
+  if ($("onepage").checked) p.onepage = "1";
   return new URLSearchParams(p);
 }
 
@@ -222,7 +233,8 @@ async function run() {
     main.classList.add("grab");
     const kinds = { chart: "schema gia' fatto", native: "pixel art", drawing: "disegno a linee", photo: "foto" };
     $("summary").innerHTML = `<b>${d.sheets} ${d.sheets === 1 ? "foglio" : "fogli"}</b>` +
-      `${d.cols} x ${d.rows} quadrati, ${d.colors} colori<br>ricamo ${d.size_cm[0]} x ${d.size_cm[1]} cm, fogli in ${d.orientation}<br>` +
+      `${d.cols} x ${d.rows} quadrati, ${d.colors} colori<br>ricamo ${d.size_cm[0]} x ${d.size_cm[1]} cm, fogli in ${d.orientation}` +
+      ($("onepage").checked ? `, quadrato ${String(d.mm).replace(".", ",")} mm` : "") + `<br>` +
       `<span style="color:var(--muted)">${kinds[d.kind] || d.kind}</span>`;
     if ($("width-auto").checked && (d.kind === "photo" || d.kind === "drawing")) $("width").value = d.cols;
     $("notes").textContent = d.notes.join("\n");

@@ -496,8 +496,8 @@ def draw_grid(d: ImageDraw.ImageDraw, xs: list[int], ys: list[int], args) -> Non
         return k == 0 or k == n - 1 or (args.major and k % args.major == 0)
 
     for thick in (False, True):  # thick lines on top
-        w = args.major_width if thick else args.line_width
-        col = args.major_color if thick else args.line_color
+        w = args.major_width if thick else thin_line(args, False)[1]
+        col = args.major_color if thick else thin_line(args, False)[0]
         for k, x in enumerate(xs):
             if is_major(k, len(xs)) == thick:
                 d.rectangle([x - w // 2, y0 - args.major_width // 2,
@@ -551,10 +551,20 @@ def grid_segments(cells: np.ndarray, major: int, x0: int = 0, y0: int = 0):
                 yield vertical, k, a, b, thick, on_dark
 
 
+def thin_line(args, on_dark: bool):
+    """Color and PNG width of thin grid lines: explicit options win over --contrast."""
+    light, dark_bg, *_, width = CONTRAST[getattr(args, "contrast", 2)]
+    if on_dark:
+        col = args.line_color_dark or parse_color(dark_bg)
+    else:
+        col = args.line_color or parse_color(light)
+    return col, args.line_width or width
+
+
 def segment_style(thick: bool, on_dark: bool, args):
     if thick:
         return (args.major_color_dark if on_dark else args.major_color), args.major_width
-    return (args.line_color_dark if on_dark else args.line_color), args.line_width
+    return thin_line(args, on_dark)
 
 
 def render_chart(cells: np.ndarray, args) -> Image.Image:
@@ -654,7 +664,30 @@ LINE_DETAIL = {1: (2.0, 0.60, 0.035, 0.35), 2: (1.6, 0.75, 0.025, 0.30), 3: (1.2
 PHOTO_MAX_COLORS = 8
 PHOTO_COLOR_TOL = 11.0  # Lab units: auto photo palette stops once the average color difference is below this
 PDF_MARGIN, PDF_HEADER, PDF_LABEL = 10.0, 22.0, 7.0  # mm; header holds title + mini map
-PDF_THIN, PDF_THICK = 0.15, 0.5  # line widths, mm
+SMALL_CELL_MM = 1.5  # --one-page warns below this printed cell size
+# --contrast level -> thin line color, thin line color over dark cells, PDF thin and
+# thick line widths (mm), thin line width in the PNG (px). Thick lines stay black/white.
+CONTRAST = {1: ("#505050", "#a0a0a0", 0.15, 0.50, 1),
+            2: ("#2a2a2a", "#d2d2d2", 0.22, 0.55, 1),
+            3: ("#000000", "#ffffff", 0.30, 0.60, 2)}
+
+
+def fit_one_page(cols: int, rows: int, args) -> float:
+    """Largest cell size, in 0.1 mm steps and at most --cell-mm, that fits the whole
+    chart on one sheet (either orientation)."""
+    w0, h0 = PAGE_SIZES[args.page]
+    room = max(min((w - 2 * PDF_MARGIN - PDF_LABEL) / cols,
+                   (h - 2 * PDF_MARGIN - PDF_HEADER - PDF_LABEL) / rows)
+               for w, h in ((w0, h0), (h0, w0)))
+    mm = min(args.cell_mm, math.floor(room * 10) / 10)
+    probe = copy.copy(args)
+    while mm >= 0.1:  # floating point: confirm with the same sums plan_sheets does
+        probe.cell_mm = mm
+        _, fx, fy = plan_sheets(cols, rows, probe)
+        if fx >= cols and fy >= rows:
+            return mm
+        mm = round(mm - 0.1, 1)
+    raise ValueError(f"{cols} x {rows} quadrati non stanno in un foglio {args.page.upper()}")
 
 
 def plan_sheets(cols: int, rows: int, args) -> tuple[tuple[float, float], int, int]:
@@ -698,11 +731,14 @@ def pdf_grid(page: Page, cells: np.ndarray, ox: float, oy: float, s: float,
     """Cells, grid and every-`major` numbers at `s` mm per cell, top-left at (ox, oy)."""
     rows, cols = cells.shape[:2]
     pdf_cells(page, cells, ox, oy, s)
-    shrink = min(1.0, s / 3.0)  # thinner lines when cells are tiny (whole-chart page)
+    # Thinner lines on small cells, so the grid does not cover them, but never so thin
+    # that the cells stop being countable.
+    shrink = min(1.0, s / 2.0)
+    thin_mm, thick_mm = CONTRAST[getattr(args, "contrast", 2)][2:4]
     segs = sorted(grid_segments(cells, args.major, x0, y0), key=lambda g: g[4])  # thick on top
     for vertical, k, a, b, thick, on_dark in segs:
         col, _ = segment_style(thick, on_dark, args)
-        width = (PDF_THICK if thick else PDF_THIN) * shrink
+        width = (thick_mm if thick else thin_mm) * shrink
         if vertical:
             page.line(ox + k * s, oy + a * s, ox + k * s, oy + b * s, col, width)
         else:
@@ -763,6 +799,8 @@ def pdf_minimap(page: Page, cells: np.ndarray, sheets, current: int) -> None:
 
 def write_pdf(path: Path, cells: np.ndarray, name: str, args) -> int:
     rows, cols = cells.shape[:2]
+    if getattr(args, "one_page", False):
+        args.cell_mm = fit_one_page(cols, rows, args)
     (w, h), fx, fy = plan_sheets(cols, rows, args)
     sheets = [(x0, y0, min(fx, cols - x0), min(fy, rows - y0))
               for y0 in range(0, rows, fy) for x0 in range(0, cols, fx)]
@@ -848,13 +886,17 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--major", type=int, default=10, help="linea spessa ogni N quadrati (0 = no)")
     r.add_argument("--numbers", action=argparse.BooleanOptionalAction, default=True,
                    help="numeri ogni N quadrati sul bordo")
-    r.add_argument("--line-color", type=parse_color, default=parse_color("#505050"))
+    r.add_argument("--contrast", type=int, choices=sorted(CONTRAST), default=2,
+                   help="visibilita' della griglia: 1 = leggera, 2 = media (default), "
+                        "3 = forte (linee nere/bianche e piu' spesse)")
+    r.add_argument("--line-color", type=parse_color,
+                   help="colore linee sottili (default dal livello --contrast)")
     r.add_argument("--major-color", type=parse_color, default=parse_color("#000000"))
-    r.add_argument("--line-color-dark", type=parse_color, default=parse_color("#a0a0a0"),
-                   help="linee sottili sopra quadrati scuri")
+    r.add_argument("--line-color-dark", type=parse_color,
+                   help="linee sottili sopra quadrati scuri (default dal livello --contrast)")
     r.add_argument("--major-color-dark", type=parse_color, default=parse_color("#ffffff"),
                    help="linee spesse sopra quadrati scuri")
-    r.add_argument("--line-width", type=int, default=1)
+    r.add_argument("--line-width", type=int, help="pixel, immagine PNG (default dal livello --contrast)")
     r.add_argument("--major-width", type=int, default=3)
     r.add_argument("--svg", action="store_true", help="salva anche SVG vettoriale (clean)")
 
@@ -866,6 +908,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="aggiunge una prima pagina con lo schema intero (come l'immagine clean)")
     f.add_argument("--cell-mm", type=float, default=3.0,
                    help="lato del quadrato stampato in mm (default 3)")
+    f.add_argument("--one-page", action="store_true",
+                   help="tutto su un foglio: rimpicciolisce il quadrato (al massimo --cell-mm) "
+                        "quanto basta")
     return p
 
 
@@ -1396,7 +1441,11 @@ def process(path: Path, args) -> None:
     print(f"  -> {stem.with_suffix('.png')}")
     if args.pdf:
         n = write_pdf(stem.with_suffix(".pdf"), cells, path.stem, args)
-        print(f"  -> {stem.with_suffix('.pdf')} ({n} {'foglio' if n == 1 else 'fogli'})")
+        mm = f", quadrato {args.cell_mm:g} mm" if args.one_page else ""
+        print(f"  -> {stem.with_suffix('.pdf')} ({n} {'foglio' if n == 1 else 'fogli'}{mm})")
+        if args.one_page and args.cell_mm < SMALL_CELL_MM:
+            print(f"  attenzione: quadrato di {args.cell_mm:g} mm, difficile da leggere; "
+                  f"meglio --page a3 o un ritaglio")
     if args.svg:
         write_svg(stem.with_suffix(".svg"), cells, args)
         print(f"  -> {stem.with_suffix('.svg')}")

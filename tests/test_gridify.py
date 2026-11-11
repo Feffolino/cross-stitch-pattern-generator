@@ -275,6 +275,30 @@ def test_fine_drawn_grid():
     assert best > 0.97, best
 
 
+def test_print_options():
+    """--one-page picks the largest cell that fits one sheet; --contrast sets the grid
+    unless a line color is given explicitly."""
+    cells = np.full((167, 95, 3), 220, np.uint8)
+    args = gridify.build_parser().parse_args(["x", "--cell-mm", "3", "--one-page"])
+    mm = gridify.fit_one_page(95, 167, args)
+    probe = gridify.build_parser().parse_args(["x", "--cell-mm", str(mm)])
+    assert gridify.plan_sheets(95, 167, probe)[1:] == (95, 167)          # fits at mm
+    probe.cell_mm = round(mm + 0.1, 1)
+    _, fx, fy = gridify.plan_sheets(95, 167, probe)
+    assert fx < 95 or fy < 167                                            # not at mm + 0.1
+    with tempfile.TemporaryDirectory() as d:
+        assert gridify.write_pdf(Path(d) / "one.pdf", cells, "one", args) == 1
+    assert args.cell_mm == mm
+    big = gridify.build_parser().parse_args(["x", "--cell-mm", "3", "--one-page"])
+    assert gridify.fit_one_page(10, 10, big) == 3.0                       # never enlarges
+
+    strong = gridify.build_parser().parse_args(["x", "--contrast", "3"])
+    assert gridify.thin_line(strong, False) == ((0, 0, 0), 2)
+    assert gridify.thin_line(strong, True)[0] == (255, 255, 255)
+    mine = gridify.build_parser().parse_args(["x", "--contrast", "3", "--line-color", "#123456"])
+    assert gridify.thin_line(mine, False)[0] == (0x12, 0x34, 0x56)
+
+
 if __name__ == "__main__":
     test_detection()
     test_outputs()
@@ -283,4 +307,5 @@ if __name__ == "__main__":
     test_native_pixel_art()
     test_line_drawing()
     test_fine_drawn_grid()
+    test_print_options()
     print("tutti i test ok")

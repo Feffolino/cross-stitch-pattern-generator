@@ -94,8 +94,13 @@ test.jpeg: 675x1200px -> 117 x 208 quadrati, lato 5.786 x 5.791px, ...
   (numerazione globale: sul foglio 2 le colonne partono da 31).
 - I fogli si interrompono sulle linee spesse, cosi' si affiancano facilmente.
 - Sopra i quadrati scuri le linee diventano chiare, per restare visibili.
+- Quanto si vede la griglia: `--contrast 1` leggera, `2` media (default), `3` forte
+  (linee nere/bianche e piu' spesse). Nella pagina web: "Griglia".
 - Formato e dimensione: `--page a3`, `--cell-mm 4` (lato del quadrato stampato,
   default 3 mm). Il programma sceglie da solo verticale/orizzontale per usare meno fogli.
+- Tutto in un foglio: `--one-page` rimpicciolisce il quadrato (al massimo `--cell-mm`)
+  quanto basta; sotto 1,5 mm avvisa che diventa difficile da leggere. Nella pagina web:
+  "tutto in un foglio".
 
 ## Se qualcosa non torna
 
