@@ -230,6 +230,51 @@ def test_line_drawing():
     assert 10 <= gridify.text_height(np.asarray(im)) <= 24
 
 
+def test_fine_drawn_grid():
+    """Chart screenshot with 2-3 px cells, 1 px grid lines (darker every 10 cells,
+    as chart programs draw them at that zoom) and a ruler on top: found as cells, not as a photo or as 10x10 blocks."""
+    cols, rows, p, ruler = 120, 90, 2.86, 18
+    blob = np.all(pixel_art(cols, rows, 21, 2) == PALETTE[1], axis=2)
+    inside = blob.copy()                                # line art: blob outlines only
+    inside[1:-1, 1:-1] &= blob[:-2, 1:-1] & blob[2:, 1:-1] & blob[1:-1, :-2] & blob[1:-1, 2:]
+    stitch = blob & ~inside
+    W, H = round(cols * p), round(rows * p)
+    im = Image.new("RGB", (W, H + ruler), "white")
+    d = ImageDraw.Draw(im)
+    for r, c in zip(*np.nonzero(~stitch | stitch)):
+        x0, y0 = round(c * p), ruler + round(r * p)
+        d.rectangle([x0, y0, round((c + 1) * p), ruler + round((r + 1) * p)],
+                    fill=(110,) * 3 if stitch[r, c] else (215,) * 3)
+    for k in range(cols + 1):
+        d.line([(round(k * p), ruler), (round(k * p), H + ruler)],
+               fill=(70,) * 3 if k % 10 == 0 else (175,) * 3)
+    for k in range(rows + 1):
+        y = ruler + round(k * p)
+        d.line([(0, y), (W, y)], fill=(70,) * 3 if k % 10 == 0 else (175,) * 3)
+    for k in range(10, cols, 10):                       # ruler: ticks and numbers
+        d.line([(round(k * p), 2), (round(k * p), ruler - 4)], fill="black")
+        d.text((round(k * p) + 2, 2), str(k), fill="black")
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=80)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "chart.jpg"
+        src.write_bytes(buf.getvalue())
+        args = gridify.build_parser().parse_args([str(src)])
+        lay = gridify.analyze(src, args, say=lambda *a: None)
+        cells = gridify.chart_cells(lay, args, say=lambda *a: None)
+    assert lay.kind == "chart" and lay.gx.drawn
+    assert abs(lay.gx.pitch - p) / p < 0.01 and abs(lay.gy.pitch - p) / p < 0.01
+    assert len(np.unique(cells.reshape(-1, 3), axis=0)) == 2
+    got = cells.astype(int).sum(axis=2) < 3 * 160
+    assert abs(got.shape[0] - rows) <= 2 and abs(got.shape[1] - cols) <= 2  # ruler cropped
+    def match(dy, dx):  # got[r + dy, c + dx] is art cell (r, c)
+        a, b = got[max(0, dy):, max(0, dx):], stitch[max(0, -dy):, max(0, -dx):]
+        h, w = min(a.shape[0], b.shape[0]), min(a.shape[1], b.shape[1])
+        return (a[:h, :w] == b[:h, :w]).mean()
+    best = max(match(dy, dx) for dy in range(-2, 3) for dx in range(-2, 3))
+    assert best > 0.97, best
+
+
 if __name__ == "__main__":
     test_detection()
     test_outputs()
@@ -237,4 +282,5 @@ if __name__ == "__main__":
     test_chart_cleanup()
     test_native_pixel_art()
     test_line_drawing()
+    test_fine_drawn_grid()
     print("tutti i test ok")

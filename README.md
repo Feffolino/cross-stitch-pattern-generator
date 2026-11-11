@@ -13,7 +13,9 @@ sui bordi e crea un PDF da stampare diviso in fogli.
 
 Funziona anche con immagini ingrandite di un fattore non intero, sfocate,
 compresse JPEG, con margini o con la griglia gia' disegnata (screenshot dal
-telefono: le fasce attorno vengono tolte da sole).
+telefono: le fasce attorno vengono tolte da sole). Anche screenshot di programmi
+per schemi con quadrati minuscoli (2-3 pixel) e la riga spessa ogni 10: le righe
+sottili dicono dove sono i quadrati, righello e numeri attorno vengono tolti.
 
 ## Requisiti
 

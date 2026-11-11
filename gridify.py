@@ -34,9 +34,14 @@ class Axis:
     pitch: float
     count: int
     score: float = 1.0
+    drawn: bool = False  # found from thin grid lines drawn between thick ones
 
     def line(self, k: int) -> float:
         return self.start + k * self.pitch
+
+
+MERGE_DEFAULT = 25.0  # --merge default
+MERGE_DRAWN = 60.0    # used instead on charts with a drawn fine grid
 
 
 # ---------------------------------------------------------------- detection
@@ -128,6 +133,47 @@ def boundary_offset(profile, pitch: float) -> float:
     return (-np.angle(c) / (2 * np.pi) * pitch) % pitch
 
 
+def line_profile(img: np.ndarray, axis: str) -> tuple[np.ndarray, np.ndarray]:
+    """How much darker each pixel column (x) or row (y) is than its neighbours.
+
+    Thin drawn grid lines show up as dark columns/rows. With cells of only 2-3 px
+    their two edges are a pixel apart and alias into a false edge period, but the
+    lines themselves still fall on the true lattice. The median along each line
+    ignores the stretches where filled cells hide it. Coordinates are pixel centres.
+    """
+    from scipy.ndimage import median_filter
+    prof = -np.median(img.astype(np.float32).mean(axis=2), axis=0 if axis == "x" else 1)
+    w = np.clip(prof - median_filter(prof, 9, mode="nearest"), 0, None).astype(np.float64)
+    return w, np.arange(len(w)) + 0.5
+
+
+def drawn_subdivision(img: np.ndarray, px: float, py: float,
+                      min_pitch: float = 2.0, min_fit: float = 0.4):
+    """Split a detected pitch that is really the thick line of a drawn chart grid.
+
+    Chart software draws a thick line every 10 (or 5) cells; when cells are tiny
+    those lines are the strongest lattice and get taken for single cells. If thin
+    lines between the thick ones sit on a lattice n times finer on both axes,
+    returns (n, x line profile, y line profile), else None.
+    """
+    profiles = line_profile(img, "x"), line_profile(img, "y")
+    for n in (10, 5):
+        if min(px, py) / n < min_pitch:
+            continue
+        fits = []
+        for (w, pos), p in zip(profiles, (px, py)):
+            if w.sum() == 0:
+                return None
+            off = boundary_offset((w, pos), p)
+            between = np.abs((pos - off + p / 2) % p - p / 2) > 1.5  # skip thick lines
+            if w[between].sum() == 0:
+                return None
+            fits.append(abs(lattice_fit(w[between], pos[between], np.array([p / n]))[0]))
+        if min(fits) >= min_fit:
+            return n, profiles[0], profiles[1]
+    return None
+
+
 def make_axis(offset: float, pitch: float, length: int, score_: float = 1.0) -> Axis:
     # First cell starts within half a cell of the image edge; a cell counts if at
     # least half of it is inside the image.
@@ -164,11 +210,19 @@ def detect_grid(img: np.ndarray, args) -> tuple[Axis, Axis]:
                   f"se i quadrati non sono quadrati usa --nonsquare", file=sys.stderr)
             px = py = p
 
+    sub = None if args.cell else drawn_subdivision(img, px, py)
+    if sub:
+        n, prof_x, prof_y = sub  # drawn lines mark the cell boundaries
+        px, sx = refine([prof_x], px / n, W)
+        py, sy = refine([prof_y], py / n, H)
+
     if args.offset:
         ox, oy = args.offset
     else:
         ox, oy = boundary_offset(prof_x, px), boundary_offset(prof_y, py)
-    return make_axis(ox, px, W, sx), make_axis(oy, py, H, sy)
+    gx, gy = make_axis(ox, px, W, sx), make_axis(oy, py, H, sy)
+    gx.drawn = gy.drawn = bool(sub)
+    return gx, gy
 
 
 def drawn_grid_extent(img: np.ndarray, gx: Axis, gy: Axis,
@@ -215,6 +269,51 @@ def drawn_grid_extent(img: np.ndarray, gx: Axis, gy: Axis,
     if np.median(rows[r.start:r.stop]) < 0.8 or np.median(cols[c.start:c.stop]) < 0.8:
         return None
     r, c = span(rows, 0.5), span(cols, 0.5)
+    return (r, c) if r and c else None
+
+
+def drawn_line_extent(img: np.ndarray, gx: Axis, gy: Axis, contrast: float = 8.0,
+                      threshold: float = 0.75) -> tuple[range, range] | None:
+    """Cell rows/columns crossed by a drawn fine grid (cells of 2-3 px).
+
+    For each row of cells, the fraction of vertical grid lines that are darker than
+    the light pixels beside them (and the same for columns). Only spots with light
+    pixels on both sides count, so dark filled cells neither help nor hurt. Rulers,
+    labels and screenshot padding are light but have no lines, so they fall outside
+    the kept span.
+    """
+    g = img.astype(np.float32).mean(axis=2)
+    light = np.percentile(g, 50)
+
+    def coverage(a: np.ndarray, along: Axis, across: Axis) -> np.ndarray:
+        # A line lands on one of the two pixels around its boundary (aliasing).
+        idx = np.array([int(math.floor(along.line(k) - 0.5)) for k in range(1, along.count)])
+        idx = idx[(idx >= 1) & (idx < a.shape[1] - 2)]
+        out = np.zeros(across.count)
+        for j in range(across.count):
+            y = int(across.start + (j + 0.5) * across.pitch)
+            if len(idx) and 0 <= y < a.shape[0]:
+                r = a[y]
+                pair = np.minimum(r[idx], r[idx + 1])
+                side = np.minimum(r[idx - 1], r[idx + 2])
+                bg = side >= light
+                if bg.sum() >= 5:
+                    out[j] = np.mean(side[bg] - pair[bg] > contrast)
+        return out
+
+    def span(cov: np.ndarray) -> range:
+        on = np.nonzero(cov > threshold)[0]
+        if not len(on):
+            return range(0)
+        a, b = on[0], on[-1]
+        # Bands touching the dark outer border are dimmed by JPEG ringing.
+        while a > 0 and cov[a - 1] >= 0.8 * threshold:
+            a -= 1
+        while b < len(cov) - 1 and cov[b + 1] >= 0.8 * threshold:
+            b += 1
+        return range(a, b + 1)
+
+    r, c = span(coverage(g, gx, gy)), span(coverage(g.T, gy, gx))
     return (r, c) if r and c else None
 
 
@@ -729,8 +828,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="stile linee: 1 = poco dettaglio, 2 = medio (default), 3 = molto")
 
     c = p.add_argument_group("colori (modalita' clean)")
-    c.add_argument("--merge", type=float, default=25.0,
-                   help="unisce colori simili entro questa distanza RGB (0 = no, default 25; "
+    c.add_argument("--merge", type=float, default=MERGE_DEFAULT,
+                   help="unisce colori simili entro questa distanza RGB (0 = no, default 25, "
+                        "60 su schemi con griglia fine gia' disegnata; "
                         "abbassa se sfumature vicine vengono unite)")
     c.add_argument("--colors", type=int, help="esattamente N colori")
     c.add_argument("--inner", type=float,
@@ -867,10 +967,13 @@ def is_chart(img: np.ndarray, gx: Axis, gy: Axis) -> bool:
     Charts rendered as little drawn crosses stay textured even when aligned (~x1.5),
     but their grid is found with high confidence (~0.6; photos stay below ~0.25).
     Flat artwork (logos, drawings) can line up with a few huge "cells", so a chart
-    also needs at least 20 cells a side.
+    also needs at least 20 cells a side. Thin grid lines found between thick ones
+    (cells too small for the shift test) are a chart by themselves.
     """
     if min(gx.count, gy.count) < 20:
         return False
+    if gx.drawn and gy.drawn:
+        return True
     a = img.astype(np.float32)
     H, W = a.shape[:2]
 
@@ -1240,20 +1343,27 @@ def chart_cells(lay: Layout, args, say=print) -> np.ndarray:
             cells = build_palette(cells, args.merge, args.colors)
     else:
         inner = args.inner
+        if inner is None and gx.drawn:
+            # 2-3 px cells: only the pixel nearest the centre is clear of the grid lines.
+            inner = 0.0
         if inner is None:
             inner = 0.5
             if cell_texture(img, gx, gy) > 40:
                 inner = 1.0
                 say("  quadrati con texture (perline/diamanti): colore preso da tutto il quadrato")
         cells = sample_cells(img, gx, gy, inner)
-        extent = drawn_grid_extent(img, gx, gy) if args.crop else None
+        find_extent = drawn_line_extent if gx.drawn else drawn_grid_extent
+        extent = find_extent(img, gx, gy) if args.crop else None
         if extent and (len(extent[0]), len(extent[1])) != cells.shape[:2]:
             rr, cc = extent
             cells = cells[rr.start:rr.stop, cc.start:cc.stop]
             say(f"  griglia gia' disegnata: tengo righe {rr.start + 1}-{rr.stop}, "
                 f"colonne {cc.start + 1}-{cc.stop} (--no-crop per tenere tutto)")
-        if args.colors or args.merge > 0:
-            cells = build_palette(cells, args.merge, args.colors)
+        merge = args.merge
+        if gx.drawn and merge == MERGE_DEFAULT:
+            merge = MERGE_DRAWN  # 1-2 px samples carry much more JPEG noise
+        if args.colors or merge > 0:
+            cells = build_palette(cells, merge, args.colors)
         if not args.colors:
             cells = fold_blends(cells)
             cells, dropped = drop_edge_text(cells)
