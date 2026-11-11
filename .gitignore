@@ -8,6 +8,7 @@ dist/
 venv/
 env/
 .env
+.env.*
 
 # Test and tool caches
 .pytest_cache/
@@ -24,12 +25,18 @@ htmlcov/
 Thumbs.db
 desktop.ini
 *.stackdump
+*.log
+*.tmp
 
 # Output written by gridify.py
 *_clean.png
 *_clean.pdf
 *_clean.svg
 *_overlay.png
+*.pdf
+*.svg
+*.npy
+schemi/
 
 # Input pictures (personal photos, downloaded charts) and rembg models
 *.jpg
@@ -38,7 +45,11 @@ desktop.ini
 *.webp
 *.bmp
 *.heic
+*.gif
+*.tif
+*.tiff
 *.onnx
 
-# Local dev config
+# Local dev config and tool state
 .claude/
+graphify-out/
