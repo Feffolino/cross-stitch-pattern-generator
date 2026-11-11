@@ -539,7 +539,9 @@ def grid_segments(cells: np.ndarray, major: int, x0: int = 0, y0: int = 0):
     """
     rows, cols = cells.shape[:2]
     lum = cells[..., 0] * 0.299 + cells[..., 1] * 0.587 + cells[..., 2] * 0.114
-    dark = lum < 90
+    # Halfway between the default thin line colors (#505050, #a0a0a0): below it the
+    # light line stands out more than the dark one (mid greys like 100 included).
+    dark = lum < 120
     for vertical, n, g0, strip in ((True, cols, x0, lambda k: dark[:, k]),
                                    (False, rows, y0, lambda k: dark[k, :])):
         for k in range(n + 1):
