@@ -98,6 +98,9 @@ test.jpeg: 675x1200px -> 117 x 208 quadrati, lato 5.786 x 5.791px, ...
   (linee nere/bianche e piu' spesse). Nella pagina web: "Griglia".
 - Formato e dimensione: `--page a3`, `--cell-mm 4` (lato del quadrato stampato,
   default 3 mm). Il programma sceglie da solo verticale/orizzontale per usare meno fogli.
+- Bordi del foglio: `--margin 5` (mm, default 10; molte stampanti non stampano i primi
+  4-5 mm). Con un solo foglio l'intestazione e' una riga sola. Nella pagina web:
+  "Margine foglio".
 - Tutto in un foglio: `--one-page` rimpicciolisce il quadrato (al massimo `--cell-mm`)
   quanto basta; sotto 1,5 mm avvisa che diventa difficile da leggere. Nella pagina web:
   "tutto in un foglio".

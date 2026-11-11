@@ -51,6 +51,8 @@ def build_args(q: dict[str, str]):
         argv.append("--overview")
     if q.get("contrast") in ("1", "2", "3"):
         argv += ["--contrast", q["contrast"]]
+    if q.get("margin"):
+        argv += ["--margin", q["margin"]]
     if q.get("onepage") == "1":
         argv.append("--one-page")
     if q.get("bg") == "remove":

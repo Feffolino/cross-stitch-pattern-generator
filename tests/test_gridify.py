@@ -291,6 +291,8 @@ def test_print_options():
     assert args.cell_mm == mm
     big = gridify.build_parser().parse_args(["x", "--cell-mm", "3", "--one-page"])
     assert gridify.fit_one_page(10, 10, big) == 3.0                       # never enlarges
+    thin = gridify.build_parser().parse_args(["x", "--cell-mm", "3", "--one-page", "--margin", "4"])
+    assert gridify.fit_one_page(95, 167, thin) > mm                       # less margin, bigger cells
 
     strong = gridify.build_parser().parse_args(["x", "--contrast", "3"])
     assert gridify.thin_line(strong, False) == ((0, 0, 0), 2)

@@ -664,6 +664,12 @@ LINE_DETAIL = {1: (2.0, 0.60, 0.035, 0.35), 2: (1.6, 0.75, 0.025, 0.30), 3: (1.2
 PHOTO_MAX_COLORS = 8
 PHOTO_COLOR_TOL = 11.0  # Lab units: auto photo palette stops once the average color difference is below this
 PDF_MARGIN, PDF_HEADER, PDF_LABEL = 10.0, 22.0, 7.0  # mm; header holds title + mini map
+PDF_HEADER_ONE = 8.0  # mm; a single sheet has no mini map, only the title
+
+
+def page_frame(args, single: bool) -> tuple[float, float]:
+    """White page margin and header height (mm) above the chart."""
+    return getattr(args, "margin", PDF_MARGIN), PDF_HEADER_ONE if single else PDF_HEADER
 SMALL_CELL_MM = 1.5  # --one-page warns below this printed cell size
 # --contrast level -> thin line color, thin line color over dark cells, PDF thin and
 # thick line widths (mm), thin line width in the PNG (px). Thick lines stay black/white.
@@ -676,8 +682,8 @@ def fit_one_page(cols: int, rows: int, args) -> float:
     """Largest cell size, in 0.1 mm steps and at most --cell-mm, that fits the whole
     chart on one sheet (either orientation)."""
     w0, h0 = PAGE_SIZES[args.page]
-    room = max(min((w - 2 * PDF_MARGIN - PDF_LABEL) / cols,
-                   (h - 2 * PDF_MARGIN - PDF_HEADER - PDF_LABEL) / rows)
+    m, top = page_frame(args, True)
+    room = max(min((w - 2 * m - PDF_LABEL) / cols, (h - 2 * m - top - PDF_LABEL) / rows)
                for w, h in ((w0, h0), (h0, w0)))
     mm = min(args.cell_mm, math.floor(room * 10) / 10)
     probe = copy.copy(args)
@@ -697,10 +703,16 @@ def plan_sheets(cols: int, rows: int, args) -> tuple[tuple[float, float], int, i
     (multiples of --major) so neighbouring sheets line up by eye.
     """
     w0, h0 = PAGE_SIZES[args.page]
+    m, top = page_frame(args, True)
+    for w, h in ((w0, h0), (h0, w0)):  # whole chart on one sheet: small header, no mini map
+        if (cols <= int((w - 2 * m - PDF_LABEL) // args.cell_mm)
+                and rows <= int((h - 2 * m - top - PDF_LABEL) // args.cell_mm)):
+            return (w, h), cols, rows
+    m, top = page_frame(args, False)
     best = None
     for w, h in ((w0, h0), (h0, w0)):
-        fit = [int((w - 2 * PDF_MARGIN - PDF_LABEL) // args.cell_mm),
-               int((h - 2 * PDF_MARGIN - PDF_HEADER - PDF_LABEL) // args.cell_mm)]
+        fit = [int((w - 2 * m - PDF_LABEL) // args.cell_mm),
+               int((h - 2 * m - top - PDF_LABEL) // args.cell_mm)]
         for i, n in enumerate((cols, rows)):
             if n <= fit[i]:
                 fit[i] = n
@@ -755,10 +767,10 @@ def pdf_grid(page: Page, cells: np.ndarray, ox: float, oy: float, s: float,
                 page.text(ox - 1, oy + k * s, str(g), size=label_size, align="right")
 
 
-def pdf_sheet(page: Page, cells: np.ndarray, x0: int, y0: int, args) -> None:
+def pdf_sheet(page: Page, cells: np.ndarray, x0: int, y0: int, args, single: bool = False) -> None:
     """One sheet of the chart; x0/y0 = global index of its first column/row."""
-    pdf_grid(page, cells, PDF_MARGIN + PDF_LABEL, PDF_MARGIN + PDF_HEADER + PDF_LABEL,
-             args.cell_mm, x0, y0, args)
+    m, top = page_frame(args, single)
+    pdf_grid(page, cells, m + PDF_LABEL, m + top + PDF_LABEL, args.cell_mm, x0, y0, args)
 
 
 def pdf_whole(doc: Document, cells: np.ndarray, name: str, args, w: float, h: float) -> None:
@@ -768,27 +780,28 @@ def pdf_whole(doc: Document, cells: np.ndarray, name: str, args, w: float, h: fl
     look = copy.copy(args)
     look.px, look.numbers, look.grid_lines = 24, True, "full"  # exactly the saved clean image
     clean = render_chart(cells, look)
-    aw, ah = w - 2 * PDF_MARGIN, h - 2 * PDF_MARGIN - PDF_HEADER
+    m, top = page_frame(args, False)
+    aw, ah = w - 2 * m, h - 2 * m - top
     turned = clean.rotate(90, expand=True)
     if min(aw / turned.width, ah / turned.height) > min(aw / clean.width, ah / clean.height):
         clean = turned
     scale = min(aw / clean.width, ah / clean.height)
     page = doc.add_page(w, h)
-    page.text(PDF_MARGIN, PDF_MARGIN + 5, f"{name} – schema intero, {cols} x {rows} quadrati", size=12)
+    page.text(m, m + 5, f"{name} – schema intero, {cols} x {rows} quadrati", size=12)
     dw, dh = clean.width * scale, clean.height * scale
     # Shrunk smoothly to 300 dpi, like a browser showing the big image: the grid
     # becomes a light veil and the drawing stays readable.
     px_w = round(dw / 25.4 * 300)
     if px_w < clean.width:
         clean = clean.resize((px_w, round(clean.height * px_w / clean.width)), Image.LANCZOS)
-    page.image((w - dw) / 2, PDF_MARGIN + PDF_HEADER, dw, dh, clean)
+    page.image((w - dw) / 2, m + top, dw, dh, clean)
 
 
-def pdf_minimap(page: Page, cells: np.ndarray, sheets, current: int) -> None:
+def pdf_minimap(page: Page, cells: np.ndarray, sheets, current: int, m: float = PDF_MARGIN) -> None:
     """Small copy of the whole chart, top right, with this sheet outlined in red."""
     rows, cols = cells.shape[:2]
     s = min(70.0 / cols, (PDF_HEADER - 4) / rows)
-    ox, oy = page.w - PDF_MARGIN - cols * s, PDF_MARGIN
+    ox, oy = page.w - m - cols * s, m
     pdf_cells(page, cells, ox, oy, s)
     for i, (x0, y0, cw, ch) in enumerate(sheets):
         if i != current:
@@ -804,19 +817,21 @@ def write_pdf(path: Path, cells: np.ndarray, name: str, args) -> int:
     (w, h), fx, fy = plan_sheets(cols, rows, args)
     sheets = [(x0, y0, min(fx, cols - x0), min(fy, rows - y0))
               for y0 in range(0, rows, fy) for x0 in range(0, cols, fx)]
+    single = len(sheets) == 1
+    m, _ = page_frame(args, single)
     doc = Document()
     if getattr(args, "overview", False) and len(sheets) > 1:
         pdf_whole(doc, cells, name, args, w, h)
     for i, (x0, y0, cw, ch) in enumerate(sheets):
         page = doc.add_page(w, h)
         if len(sheets) > 1:
-            page.text(PDF_MARGIN, PDF_MARGIN + 5, f"{name} – foglio {i + 1} di {len(sheets)}", size=12)
-            page.text(PDF_MARGIN, PDF_MARGIN + 11, f"colonne {x0 + 1}-{x0 + cw}, righe {y0 + 1}-{y0 + ch} "
+            page.text(m, m + 5, f"{name} – foglio {i + 1} di {len(sheets)}", size=12)
+            page.text(m, m + 11, f"colonne {x0 + 1}-{x0 + cw}, righe {y0 + 1}-{y0 + ch} "
                       f"(riquadro rosso a destra)", size=9)
-            pdf_minimap(page, cells, sheets, i)
+            pdf_minimap(page, cells, sheets, i, m)
         else:
-            page.text(PDF_MARGIN, PDF_MARGIN + 5, f"{name} – {cols} x {rows} quadrati", size=12)
-        pdf_sheet(page, cells[y0:y0 + ch, x0:x0 + cw], x0, y0, args)
+            page.text(m, m + 5, f"{name} – {cols} x {rows} quadrati", size=12)
+        pdf_sheet(page, cells[y0:y0 + ch, x0:x0 + cw], x0, y0, args, single)
     doc.save(path)
     return len(sheets)
 
@@ -908,6 +923,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="aggiunge una prima pagina con lo schema intero (come l'immagine clean)")
     f.add_argument("--cell-mm", type=float, default=3.0,
                    help="lato del quadrato stampato in mm (default 3)")
+    f.add_argument("--margin", type=float, default=PDF_MARGIN,
+                   help="margine bianco del foglio in mm (default 10; molte stampanti non "
+                        "stampano i primi 4-5 mm)")
     f.add_argument("--one-page", action="store_true",
                    help="tutto su un foglio: rimpicciolisce il quadrato (al massimo --cell-mm) "
                         "quanto basta")

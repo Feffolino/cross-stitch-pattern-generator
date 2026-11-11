@@ -123,6 +123,11 @@
         <span class="check"><input type="checkbox" id="onepage"> tutto in un foglio (rimpicciolisce il quadrato)</span>
       </div>
       <div class="row">
+        <label>Margine foglio <output id="margin-v">10 mm</output></label>
+        <input type="range" id="margin" min="3" max="15" step="1" value="10">
+        <span class="check">piu' piccolo = quadrati piu' grandi o meno fogli</span>
+      </div>
+      <div class="row">
         <label>Griglia</label>
         <div class="seg" data-name="contrast" title="Quanto si vedono le righe tra i quadrati, nel PDF e nell'anteprima">
           <button data-v="1">Leggera</button>
@@ -183,8 +188,9 @@ function labels() {
   $("width-v").textContent = $("width-auto").checked ? "auto" : $("width").value + " quadrati";
   $("colors-v").textContent = $("colors-auto").checked ? "auto" : $("colors").value;
   $("mm-v").textContent = Number($("mm").value).toFixed(1).replace(".", ",") + " mm";
+  $("margin-v").textContent = $("margin").value + " mm";
 }
-["detail", "width", "colors", "mm"].forEach(id => $(id).addEventListener("input", () => { labels(); refresh(); }));
+["detail", "width", "colors", "mm", "margin"].forEach(id => $(id).addEventListener("input", () => { labels(); refresh(); }));
 $("onepage").addEventListener("change", refresh);
 ["width-auto", "colors-auto"].forEach(id => $(id).addEventListener("change", () => {
   $(id.replace("-auto", "")).disabled = $(id).checked; labels(); refresh();
@@ -201,7 +207,7 @@ function visibility() {
 
 function params() {
   const p = { id: state.id, kind: state.kind, style: state.style, bg: state.bg, page: state.page, grid: state.grid,
-              contrast: state.contrast, mm: $("mm").value, detail: $("detail").value, name: state.name };
+              contrast: state.contrast, mm: $("mm").value, margin: $("margin").value, detail: $("detail").value, name: state.name };
   const photoLike = state.detected === "photo" || state.detected === "drawing" || state.kind === "photo";
   if (photoLike && !$("width-auto").checked) p.width = $("width").value;
   if (!$("colors-auto").checked) p.colors = $("colors").value;
