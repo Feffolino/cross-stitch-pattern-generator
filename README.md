@@ -57,14 +57,16 @@ Tutto automatico:
 1. **Sfondo**: se c'e' un soggetto chiaro (una persona, un oggetto) lo sfondo viene
    tolto; con paesaggi, palazzi o animali nell'erba la foto resta intera.
 2. **Stile**: disegno nero su bianco "a china", come gli schemi trovati online:
-   zone scure piene, linee per occhi, bocca, contorni.
-3. **Larghezza**: tra 80 e 160 quadrati, piu' larga se la foto ha piu' dettagli.
+   zone scure (capelli, vestiti) come bordo spesso invece che piene, linee per occhi,
+   bocca e contorni anche sui visi chiari, contorno del soggetto se lo sfondo e' tolto.
+3. **Larghezza**: tra 80 e 200 quadrati, piu' larga se la foto ha piu' dettagli.
 
 Opzioni:
 
 | Opzione | Effetto |
 |---|---|
 | `--detail 1` / `3` | meno / piu' dettaglio nello stile a china (default 2) |
+| `--fill 0` / `4` | zone scure piene di nero / bordo piu' largo (default 2) |
 | `--style colori` | pochi colori presi dalla foto invece del bianco e nero |
 | `--colors N` | con `--style colori`: esattamente N colori |
 | `--photo 120` | larghezza fissa in quadrati |

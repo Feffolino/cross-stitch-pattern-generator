@@ -164,7 +164,10 @@ def test_photo_mode():
         assert out.shape[1] > 80 * 24  # at least 80 cells of 24 px
         cells = gridify.line_art(img, None, 80, 107, 2)
         assert len(np.unique(cells.reshape(-1, 3), axis=0)) == 2
-        assert (cells[..., 0] < 128).mean() > 0.2  # the dark figure is inked
+        solid = gridify.line_art(img, None, 80, 107, 2, fill=0)
+        assert (solid[..., 0] < 128).mean() > 0.2  # fill 0: the dark figure is inked
+        # default: big dark areas become a band, so much less black ink
+        assert (cells[..., 0] < 128).mean() < 0.8 * (solid[..., 0] < 128).mean()
 
         assert gridify.main([str(src), "--keep-bg", "--no-pdf", "--style", "colori",
                              "--colors", "3"]) == 0

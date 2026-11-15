@@ -45,6 +45,8 @@ def build_args(q: dict[str, str]):
         argv += ["--style", q["style"]]
     if q.get("detail") in ("1", "2", "3"):
         argv += ["--detail", q["detail"]]
+    if q.get("fill", "").isdigit():
+        argv += ["--fill", q["fill"]]
     if q.get("colors"):
         argv += ["--colors", q["colors"]]
     if q.get("overview") == "1":

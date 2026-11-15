@@ -655,12 +655,14 @@ def write_svg(path: Path, cells: np.ndarray, args) -> None:
 # ---------------------------------------------------------------------- PDF
 
 PAGE_SIZES = {"a4": (210.0, 297.0), "a3": (297.0, 420.0)}
-PHOTO_WIDTHS = (80, 100, 120, 140, 160)  # chart widths tried for a photo, simplest first
+PHOTO_WIDTHS = (80, 100, 120, 140, 160, 180, 200)  # chart widths tried for a photo, simplest first
 TEXT_CELLS = 5.5        # letter height in cells for text in a drawing to be readable when stitched
 TEXT_MAX_WIDTH = 450    # never widen a drawing beyond this many cells just for its text
 LINE_PX = 6             # working pixels per cell for the line-art style
-# line-art detail level -> (line blur sigma px, dark fill as share of Otsu, edge strength, cell ink cover)
-LINE_DETAIL = {1: (2.0, 0.60, 0.035, 0.35), 2: (1.6, 0.75, 0.025, 0.30), 3: (1.2, 0.90, 0.018, 0.25)}
+# line-art detail level -> (line blur sigma px, dark fill as share of Otsu, edge strength in
+# standard deviations of the subject's edge signal, cell ink cover)
+LINE_DETAIL = {1: (2.0, 0.60, 1.7, 0.35), 2: (1.6, 0.75, 1.4, 0.30), 3: (1.2, 0.90, 1.1, 0.25)}
+LINE_FILL = 2  # --fill default: dark areas drawn as a band this many cells wide
 PHOTO_MAX_COLORS = 8
 PHOTO_COLOR_TOL = 11.0  # Lab units: auto photo palette stops once the average color difference is below this
 PDF_MARGIN, PDF_HEADER, PDF_LABEL = 10.0, 22.0, 7.0  # mm; header holds title + mini map
@@ -881,6 +883,9 @@ def build_parser() -> argparse.ArgumentParser:
                          "colori = pochi colori presi dalla foto")
     ph.add_argument("--detail", type=int, choices=[1, 2, 3], default=2,
                     help="stile linee: 1 = poco dettaglio, 2 = medio (default), 3 = molto")
+    ph.add_argument("--fill", type=int, default=LINE_FILL,
+                    help="stile linee: zone scure (capelli, vestiti) disegnate come bordo largo "
+                         "N quadrati; 0 = piene di nero come una sagoma (default 2)")
 
     c = p.add_argument_group("colori (modalita' clean)")
     c.add_argument("--merge", type=float, default=MERGE_DEFAULT,
@@ -1122,14 +1127,19 @@ def equalize_light(g: np.ndarray) -> np.ndarray:
 
 
 def line_art(img: np.ndarray, mask: np.ndarray | None, cols: int, rows: int,
-             detail: int) -> np.ndarray:
+             detail: int, fill: int = LINE_FILL) -> np.ndarray:
     """Black-on-white ink drawing of a photo, like the stencil charts found online.
 
-    Dark areas (hair, clothes, shadows) become solid black, darker than a share of
-    the Otsu threshold of the subject; the dark side of sharp edges becomes lines
-    (difference of Gaussians), so eyes, mouths and fingers show. Worked out at
-    LINE_PX pixels per cell; a cell is black when enough of it is inked.
+    Dark areas (hair, clothes, shadows) are darker than a share of the Otsu threshold
+    of the subject; with `fill` > 0 only a band `fill` cells wide along their edge is
+    inked, so a dark sweater does not become a slab of black while pupils, nostrils
+    and brows (thinner than the band) stay solid. The dark side of edges becomes lines
+    (difference of Gaussians); the threshold follows the photo's own contrast, so pale,
+    flatly lit faces keep their eyes and mouths. A removed background leaves the
+    subject's outline. Worked out at LINE_PX pixels per cell; a cell is black when
+    enough of it is inked.
     """
+    from scipy import ndimage
     from scipy.ndimage import gaussian_filter
 
     sigma, dark_share, edge, cover = LINE_DETAIL[detail]
@@ -1139,8 +1149,14 @@ def line_art(img: np.ndarray, mask: np.ndarray | None, cols: int, rows: int,
     subject = (np.ones(g.shape, bool) if mask is None else
                np.asarray(Image.fromarray(mask).resize(size, Image.BOX)) >= 128)
     dark = gaussian_filter(g, 1.0) < otsu(g[subject]) * dark_share
-    lines = gaussian_filter(g, sigma) - gaussian_filter(g, sigma * 1.6) < -edge
+    if fill > 0:
+        dark &= ~ndimage.binary_erosion(dark, iterations=fill * LINE_PX, border_value=1)
+    dog = gaussian_filter(g, sigma) - gaussian_filter(g, sigma * 1.6)
+    lines = dog < -edge * dog[subject].std()
     ink = (dark | lines) & subject
+    if mask is not None:  # outline of the subject, one cell wide
+        # (not where the subject runs off the photo's edge)
+        ink |= subject & ~ndimage.binary_erosion(subject, iterations=LINE_PX, border_value=1)
     black = ink.reshape(rows, LINE_PX, cols, LINE_PX).mean(axis=(1, 3)) >= cover
     cells = np.where(black[..., None], np.uint8(20), np.uint8(255)) * np.ones(3, np.uint8)
     return despeckle(cells)
@@ -1386,7 +1402,7 @@ def chart_cells(lay: Layout, args, say=print) -> np.ndarray:
     if drawing:
         cells = drawing_cells(img, gx.count, gy.count)
     elif photo and args.style == "linee":
-        cells = line_art(img, mask, gx.count, gy.count, args.detail)
+        cells = line_art(img, mask, gx.count, gy.count, args.detail, args.fill)
         if mask is None:
             cells = drop_small_blobs(cells)
     elif photo:

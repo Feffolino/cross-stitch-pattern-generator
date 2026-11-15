@@ -104,6 +104,11 @@
         <label>Dettaglio <output id="detail-v">medio</output></label>
         <input type="range" id="detail" min="1" max="3" step="1" value="2">
       </div>
+      <div class="row lines-only">
+        <label>Zone scure <output id="fill-v">bordo 2</output></label>
+        <input type="range" id="fill" min="0" max="5" step="1" value="2">
+        <span class="check">capelli e vestiti: 0 = pieni di nero, di piu' = solo un bordo</span>
+      </div>
       <div class="row width-only">
         <label>Larghezza <output id="width-v">auto</output></label>
         <input type="range" id="width" min="40" max="450" step="10" value="120" disabled>
@@ -185,12 +190,13 @@ document.querySelectorAll(".seg").forEach(seg => seg.addEventListener("click", e
 const detailNames = { 1: "poco", 2: "medio", 3: "molto" };
 function labels() {
   $("detail-v").textContent = detailNames[$("detail").value];
+  $("fill-v").textContent = $("fill").value === "0" ? "piene" : "bordo " + $("fill").value;
   $("width-v").textContent = $("width-auto").checked ? "auto" : $("width").value + " quadrati";
   $("colors-v").textContent = $("colors-auto").checked ? "auto" : $("colors").value;
   $("mm-v").textContent = Number($("mm").value).toFixed(1).replace(".", ",") + " mm";
   $("margin-v").textContent = $("margin").value + " mm";
 }
-["detail", "width", "colors", "mm", "margin"].forEach(id => $(id).addEventListener("input", () => { labels(); refresh(); }));
+["detail", "fill", "width", "colors", "mm", "margin"].forEach(id => $(id).addEventListener("input", () => { labels(); refresh(); }));
 $("onepage").addEventListener("change", refresh);
 ["width-auto", "colors-auto"].forEach(id => $(id).addEventListener("change", () => {
   $(id.replace("-auto", "")).disabled = $(id).checked; labels(); refresh();
@@ -207,7 +213,7 @@ function visibility() {
 
 function params() {
   const p = { id: state.id, kind: state.kind, style: state.style, bg: state.bg, page: state.page, grid: state.grid,
-              contrast: state.contrast, mm: $("mm").value, margin: $("margin").value, detail: $("detail").value, name: state.name };
+              contrast: state.contrast, mm: $("mm").value, margin: $("margin").value, detail: $("detail").value, fill: $("fill").value, name: state.name };
   const photoLike = state.detected === "photo" || state.detected === "drawing" || state.kind === "photo";
   if (photoLike && !$("width-auto").checked) p.width = $("width").value;
   if (!$("colors-auto").checked) p.colors = $("colors").value;
