@@ -149,6 +149,7 @@
       </div>
       <div class="summary" id="summary"></div>
       <label class="check" style="margin-top:12px"><input type="checkbox" id="overview"> aggiungi al PDF una pagina con lo schema intero</label>
+      <label class="check"><input type="checkbox" id="cutline"> linea rossa dove lo schema e' tagliato tra i fogli</label>
       <button class="btn" id="pdf" disabled>Scarica PDF</button>
       <div class="notes" id="notes"></div>
     </div>
@@ -218,6 +219,7 @@ function params() {
   if (photoLike && !$("width-auto").checked) p.width = $("width").value;
   if (!$("colors-auto").checked) p.colors = $("colors").value;
   if ($("onepage").checked) p.onepage = "1";
+  if ($("cutline").checked) p.cutline = "1";
   return new URLSearchParams(p);
 }
 

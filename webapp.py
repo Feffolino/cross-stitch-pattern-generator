@@ -57,6 +57,8 @@ def build_args(q: dict[str, str]):
         argv += ["--margin", q["margin"]]
     if q.get("onepage") == "1":
         argv.append("--one-page")
+    if q.get("cutline") == "1":
+        argv.append("--cut-line")
     if q.get("bg") == "remove":
         argv.append("--remove-bg")
     elif q.get("bg") == "keep":

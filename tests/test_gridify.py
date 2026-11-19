@@ -296,6 +296,14 @@ def test_split_sheets():
     capped = gridify.build_parser().parse_args(["x", "--split", "2x2", "--cell-mm", "2"])
     assert gridify.plan_split(106, 106, capped)[3] == 2.0                 # never above --cell-mm
     assert gridify.overlap_cells(gridify.build_parser().parse_args(["x"])) == 0
+    parse = gridify.build_parser().parse_args
+    assert gridify.cut_line(parse(["x", "--split", "2x1"]))                  # on with --split
+    assert not gridify.cut_line(parse(["x"]))                                # off otherwise
+    assert gridify.cut_line(parse(["x", "--cut-line"]))
+    assert not gridify.cut_line(parse(["x", "--split", "2x1", "--no-cut-line"]))
+    auto = parse(["x", "--cut-line", "--cell-mm", "3"])                      # auto sheets
+    with tempfile.TemporaryDirectory() as d:
+        assert gridify.write_pdf(Path(d) / "cut.pdf", cells, "cut", auto) > 1
     thin = gridify.build_parser().parse_args(["x", "--split", "2x1", "--pdf-lines", "0.6"])
     with tempfile.TemporaryDirectory() as d:
         assert gridify.write_pdf(Path(d) / "two.pdf", cells, "two", thin) == 2
