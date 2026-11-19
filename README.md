@@ -112,6 +112,8 @@ test.jpeg: 675x1200px -> 117 x 208 quadrati, lato 5.786 x 5.791px, ...
   della parte vicina in chiaro per allineare i fogli (`--overlap N` per cambiarli,
   `--overlap 0` per toglierli).
 - Linee del PDF piu' sottili o piu' spesse: `--pdf-lines 0.6` (1 = normale).
+- Niente grigi: `--bw` rende ogni quadrato nero o bianco puro (utile con schemi presi
+  online in grigio). Nella pagina web: "solo nero e bianco".
 - Linea rossa di taglio: `--cut-line` la disegna su ogni PDF di piu' fogli, sui lati
   dove lo schema continua nel foglio vicino (con `--split` e' gia' attiva,
   `--no-cut-line` la toglie). Nella pagina web: "linea rossa dove lo schema e'

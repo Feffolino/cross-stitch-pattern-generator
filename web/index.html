@@ -118,6 +118,7 @@
         <label>Colori <output id="colors-v">auto</output></label>
         <input type="range" id="colors" min="2" max="16" step="1" value="4" disabled>
         <span class="check"><input type="checkbox" id="colors-auto" checked> automatico</span>
+        <span class="check"><input type="checkbox" id="bw"> solo nero e bianco (niente grigi)</span>
       </div>
 
       <h2>Stampa</h2>
@@ -199,6 +200,7 @@ function labels() {
 }
 ["detail", "fill", "width", "colors", "mm", "margin"].forEach(id => $(id).addEventListener("input", () => { labels(); refresh(); }));
 $("onepage").addEventListener("change", refresh);
+$("bw").addEventListener("change", refresh);
 ["width-auto", "colors-auto"].forEach(id => $(id).addEventListener("change", () => {
   $(id.replace("-auto", "")).disabled = $(id).checked; labels(); refresh();
 }));
@@ -220,6 +222,7 @@ function params() {
   if (!$("colors-auto").checked) p.colors = $("colors").value;
   if ($("onepage").checked) p.onepage = "1";
   if ($("cutline").checked) p.cutline = "1";
+  if ($("bw").checked) p.bw = "1";
   return new URLSearchParams(p);
 }
 

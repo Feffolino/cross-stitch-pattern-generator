@@ -983,6 +983,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--inner", type=float,
                    help="parte del quadrato usata per il colore, 0.1-1 (default: 0.5, "
                         "oppure 1 = tutto se l'immagine e' fatta di perline/diamanti)")
+    c.add_argument("--bw", action="store_true",
+                   help="solo nero e bianco puri: i colori scuri diventano neri, i chiari bianchi")
     c.add_argument("--trim", action="store_true", help="toglie righe/colonne di solo sfondo ai bordi")
     c.add_argument("--crop", action=argparse.BooleanOptionalAction, default=True,
                    help="se l'immagine ha gia' una griglia disegnata, tiene solo quella zona "
@@ -1549,6 +1551,8 @@ def chart_cells(lay: Layout, args, say=print) -> np.ndarray:
             cells, dropped = drop_edge_text(cells)
             if dropped:
                 say("  tolta una scritta sul bordo (es. nome del sito)")
+    if getattr(args, "bw", False):
+        cells = black_white(cells)
     if args.trim:
         cells, _, _ = trim_background(cells)
     n_colors = len(np.unique(cells.reshape(-1, 3), axis=0))
@@ -1556,6 +1560,14 @@ def chart_cells(lay: Layout, args, say=print) -> np.ndarray:
     if n_colors > 30 and not args.colors:
         say("  molti colori: se sono sfumature di rumore prova --colors N o --merge 35")
     return cells
+
+
+def black_white(cells: np.ndarray) -> np.ndarray:
+    """--bw: every cell pure black or pure white, split halfway between the darkest
+    and the lightest color of the chart (grey charts print like hand-made ones)."""
+    lum = cells[..., 0] * 0.299 + cells[..., 1] * 0.587 + cells[..., 2] * 0.114
+    dark = lum < (lum.min() + lum.max()) / 2
+    return np.repeat(np.where(dark, 0, 255).astype(np.uint8)[..., None], 3, axis=2)
 
 
 def process(path: Path, args) -> None:

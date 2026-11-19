@@ -310,6 +310,15 @@ def test_split_sheets():
     assert gridify.faded(np.array([[[0, 255, 100]]], np.uint8)).tolist() == [[[128, 255, 178]]]
 
 
+def test_black_white():
+    """--bw turns a grey chart into pure black and white cells."""
+    cells = np.array([[[96, 96, 96], [200, 200, 200]], [[140, 140, 140], [160, 160, 160]]], np.uint8)
+    out = gridify.black_white(cells)
+    assert out.shape == cells.shape
+    assert out[..., 0].tolist() == [[0, 255], [0, 255]]
+    assert gridify.build_parser().parse_args(["x", "--bw"]).bw
+
+
 def test_print_options():
     """--one-page picks the largest cell that fits one sheet; --contrast sets the grid
     unless a line color is given explicitly."""
@@ -346,4 +355,5 @@ if __name__ == "__main__":
     test_fine_drawn_grid()
     test_print_options()
     test_split_sheets()
+    test_black_white()
     print("tutti i test ok")
