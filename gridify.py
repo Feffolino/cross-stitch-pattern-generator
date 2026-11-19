@@ -547,6 +547,8 @@ def grid_segments(cells: np.ndarray, major: int, x0: int = 0, y0: int = 0):
         for k in range(n + 1):
             thick = k in (0, n) or bool(major and (g0 + k) % major == 0)
             both = strip(max(k - 1, 0)) & strip(min(k, n - 1))
+            if k in (0, n):  # outer frame: always the dark line, or it breaks up on dark cells
+                both = np.zeros_like(both)
             for a, b, on_dark in _runs(both):
                 yield vertical, k, a, b, thick, on_dark
 
