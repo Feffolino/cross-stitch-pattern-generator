@@ -748,7 +748,7 @@ def pdf_grid(page: Page, cells: np.ndarray, ox: float, oy: float, s: float,
     pdf_cells(page, cells, ox, oy, s)
     # Thinner lines on small cells, so the grid does not cover them, but never so thin
     # that the cells stop being countable.
-    shrink = min(1.0, s / 2.0)
+    shrink = min(1.0, s / 2.0) * getattr(args, "pdf_lines", 1.0)
     thin_mm, thick_mm = CONTRAST[getattr(args, "contrast", 2)][2:4]
     segs = sorted(grid_segments(cells, args.major, x0, y0), key=lambda g: g[4])  # thick on top
     for vertical, k, a, b, thick, on_dark in segs:
@@ -1005,6 +1005,9 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--one-page", action="store_true",
                    help="tutto su un foglio: rimpicciolisce il quadrato (al massimo --cell-mm) "
                         "quanto basta")
+    f.add_argument("--pdf-lines", type=float, default=1.0,
+                   help="spessore delle linee nel PDF, 1 = normale (default), "
+                        "0.6 = piu' sottili, 1.5 = piu' spesse")
     f.add_argument("--split", type=pair(int), metavar="COLONNExRIGHE",
                    help="divide in parti uguali, un foglio per parte (es. 2x2 = 4 fogli); "
                         "quadrato il piu' grande che sta, al massimo --cell-mm")

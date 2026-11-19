@@ -111,6 +111,7 @@ test.jpeg: 675x1200px -> 117 x 208 quadrati, lato 5.786 x 5.791px, ...
   rosso, una linea rossa dove avviene il taglio e, oltre la linea, i primi 3 quadrati
   della parte vicina in chiaro per allineare i fogli (`--overlap N` per cambiarli,
   `--overlap 0` per toglierli).
+- Linee del PDF piu' sottili o piu' spesse: `--pdf-lines 0.6` (1 = normale).
 
 ## Se qualcosa non torna
 

@@ -296,6 +296,9 @@ def test_split_sheets():
     capped = gridify.build_parser().parse_args(["x", "--split", "2x2", "--cell-mm", "2"])
     assert gridify.plan_split(106, 106, capped)[3] == 2.0                 # never above --cell-mm
     assert gridify.overlap_cells(gridify.build_parser().parse_args(["x"])) == 0
+    thin = gridify.build_parser().parse_args(["x", "--split", "2x1", "--pdf-lines", "0.6"])
+    with tempfile.TemporaryDirectory() as d:
+        assert gridify.write_pdf(Path(d) / "two.pdf", cells, "two", thin) == 2
     assert gridify.faded(np.array([[[0, 255, 100]]], np.uint8)).tolist() == [[[128, 255, 178]]]
 
 
