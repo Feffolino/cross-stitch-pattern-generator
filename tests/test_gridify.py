@@ -278,6 +278,27 @@ def test_fine_drawn_grid():
     assert best > 0.97, best
 
 
+def test_split_sheets():
+    """--split CxR gives equal parts, one per sheet, and the largest cell that fits the
+    part plus its faded overlap strips."""
+    cells = np.full((106, 106, 3), 200, np.uint8)
+    args = gridify.build_parser().parse_args(["x", "--split", "2x2", "--cell-mm", "9",
+                                              "--margin", "5"])
+    (w, h), fx, fy, mm = gridify.plan_split(106, 106, args)
+    assert (fx, fy) == (53, 53)
+    m, top = gridify.page_frame(args, False)
+    ex = 53 + gridify.SPLIT_OVERLAP                                       # one neighbour per side
+    assert ex * mm <= w - 2 * m - gridify.PDF_LABEL
+    assert ex * round(mm + 0.1, 1) > min(w - 2 * m - gridify.PDF_LABEL,
+                                         h - 2 * m - top - gridify.PDF_LABEL)
+    with tempfile.TemporaryDirectory() as d:
+        assert gridify.write_pdf(Path(d) / "four.pdf", cells, "four", args) == 4
+    capped = gridify.build_parser().parse_args(["x", "--split", "2x2", "--cell-mm", "2"])
+    assert gridify.plan_split(106, 106, capped)[3] == 2.0                 # never above --cell-mm
+    assert gridify.overlap_cells(gridify.build_parser().parse_args(["x"])) == 0
+    assert gridify.faded(np.array([[[0, 255, 100]]], np.uint8)).tolist() == [[[128, 255, 178]]]
+
+
 def test_print_options():
     """--one-page picks the largest cell that fits one sheet; --contrast sets the grid
     unless a line color is given explicitly."""
@@ -313,4 +334,5 @@ if __name__ == "__main__":
     test_line_drawing()
     test_fine_drawn_grid()
     test_print_options()
+    test_split_sheets()
     print("tutti i test ok")

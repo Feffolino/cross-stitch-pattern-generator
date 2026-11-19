@@ -673,6 +673,7 @@ def page_frame(args, single: bool) -> tuple[float, float]:
     """White page margin and header height (mm) above the chart."""
     return getattr(args, "margin", PDF_MARGIN), PDF_HEADER_ONE if single else PDF_HEADER
 SMALL_CELL_MM = 1.5  # --one-page warns below this printed cell size
+SPLIT_OVERLAP = 3  # --split: cells of each neighbouring part shown faded past the cut
 # --contrast level -> thin line color, thin line color over dark cells, PDF thin and
 # thick line widths (mm), thin line width in the PNG (px). Thick lines stay black/white.
 CONTRAST = {1: ("#505050", "#a0a0a0", 0.15, 0.50, 1),
@@ -769,10 +770,73 @@ def pdf_grid(page: Page, cells: np.ndarray, ox: float, oy: float, s: float,
                 page.text(ox - 1, oy + k * s, str(g), size=label_size, align="right")
 
 
-def pdf_sheet(page: Page, cells: np.ndarray, x0: int, y0: int, args, single: bool = False) -> None:
-    """One sheet of the chart; x0/y0 = global index of its first column/row."""
+def overlap_cells(args) -> int:
+    ov = getattr(args, "overlap", None)
+    if ov is None:
+        ov = SPLIT_OVERLAP if getattr(args, "split", None) else 0
+    return max(0, ov)
+
+
+def plan_split(cols: int, rows: int, args) -> tuple[tuple[float, float], int, int, float]:
+    """--split CxR: equal parts, one per sheet, plus the faded overlap strips. Returns
+    page size, cells per part and the largest cell (0.1 mm steps, at most --cell-mm)."""
+    nc, nr = args.split
+    if nc < 1 or nr < 1:
+        raise ValueError("--split vuole numeri da 1 in su, es. 2x2")
+    fx, fy = math.ceil(cols / nc), math.ceil(rows / nr)
+    ov = overlap_cells(args)
+    ex = fx + ov * min(nc - 1, 2)  # a middle part shows both neighbours
+    ey = fy + ov * min(nr - 1, 2)
+    w0, h0 = PAGE_SIZES[args.page]
+    m, top = page_frame(args, nc * nr == 1)
+    best = None
+    for w, h in ((w0, h0), (h0, w0)):
+        room = min((w - 2 * m - PDF_LABEL) / ex, (h - 2 * m - top - PDF_LABEL) / ey)
+        if best is None or room > best[0]:
+            best = (room, (w, h))
+    mm = min(args.cell_mm, math.floor(best[0] * 10) / 10)
+    if mm < 0.1:
+        raise ValueError(f"--split {nc}x{nr}: le parti non stanno in un foglio {args.page.upper()}")
+    return best[1], fx, fy, mm
+
+
+def faded(cells: np.ndarray, keep: float = 0.5) -> np.ndarray:
+    """Cells washed toward white: the neighbouring part, shown for reference only."""
+    return (255 - (255 - cells.astype(float)) * keep).round().astype(np.uint8)
+
+
+def pdf_sheet(page: Page, cells: np.ndarray, x0: int, y0: int, args, single: bool = False,
+              whole: np.ndarray | None = None) -> None:
+    """One sheet of the chart; x0/y0 = global index of its first column/row.
+
+    With `whole` (the full chart) and an overlap, the first cells of the neighbouring
+    parts are drawn faded around the sheet and red lines mark where it is cut.
+    """
     m, top = page_frame(args, single)
-    pdf_grid(page, cells, m + PDF_LABEL, m + top + PDF_LABEL, args.cell_mm, x0, y0, args)
+    ov = overlap_cells(args) if whole is not None else 0
+    s = args.cell_mm
+    if not ov:
+        pdf_grid(page, cells, m + PDF_LABEL, m + top + PDF_LABEL, s, x0, y0, args)
+        return
+    rows, cols = whole.shape[:2]
+    ch, cw = cells.shape[:2]
+    ex0, ey0 = max(0, x0 - ov), max(0, y0 - ov)
+    ex1, ey1 = min(cols, x0 + cw + ov), min(rows, y0 + ch + ov)
+    ox, oy = m + PDF_LABEL, m + top + PDF_LABEL
+    pdf_grid(page, faded(whole[ey0:ey1, ex0:ex1]), ox, oy, s, ex0, ey0, args)
+    bx, by = ox + (x0 - ex0) * s, oy + (y0 - ey0) * s
+    plain = copy.copy(args)
+    plain.numbers = False  # numbers already drawn along the outer edge
+    pdf_grid(page, cells, bx, by, s, x0, y0, plain)
+    red, width = (220, 0, 0), 0.8
+    if ex0 < x0:
+        page.line(bx, by, bx, by + ch * s, red, width)
+    if x0 + cw < ex1:
+        page.line(bx + cw * s, by, bx + cw * s, by + ch * s, red, width)
+    if ey0 < y0:
+        page.line(bx, by, bx + cw * s, by, red, width)
+    if y0 + ch < ey1:
+        page.line(bx, by + ch * s, bx + cw * s, by + ch * s, red, width)
 
 
 def pdf_whole(doc: Document, cells: np.ndarray, name: str, args, w: float, h: float) -> None:
@@ -814,9 +878,12 @@ def pdf_minimap(page: Page, cells: np.ndarray, sheets, current: int, m: float = 
 
 def write_pdf(path: Path, cells: np.ndarray, name: str, args) -> int:
     rows, cols = cells.shape[:2]
-    if getattr(args, "one_page", False):
-        args.cell_mm = fit_one_page(cols, rows, args)
-    (w, h), fx, fy = plan_sheets(cols, rows, args)
+    if getattr(args, "split", None):
+        (w, h), fx, fy, args.cell_mm = plan_split(cols, rows, args)
+    else:
+        if getattr(args, "one_page", False):
+            args.cell_mm = fit_one_page(cols, rows, args)
+        (w, h), fx, fy = plan_sheets(cols, rows, args)
     sheets = [(x0, y0, min(fx, cols - x0), min(fy, rows - y0))
               for y0 in range(0, rows, fy) for x0 in range(0, cols, fx)]
     single = len(sheets) == 1
@@ -830,10 +897,14 @@ def write_pdf(path: Path, cells: np.ndarray, name: str, args) -> int:
             page.text(m, m + 5, f"{name} – foglio {i + 1} di {len(sheets)}", size=12)
             page.text(m, m + 11, f"colonne {x0 + 1}-{x0 + cw}, righe {y0 + 1}-{y0 + ch} "
                       f"(riquadro rosso a destra)", size=9)
+            if overlap_cells(args):
+                page.text(m, m + 16, "linea rossa = taglio; quadrati chiari oltre la linea "
+                          "= parte vicina, solo per allineare", size=8)
             pdf_minimap(page, cells, sheets, i, m)
         else:
             page.text(m, m + 5, f"{name} – {cols} x {rows} quadrati", size=12)
-        pdf_sheet(page, cells[y0:y0 + ch, x0:x0 + cw], x0, y0, args, single)
+        pdf_sheet(page, cells[y0:y0 + ch, x0:x0 + cw], x0, y0, args, single,
+                  whole=None if single else cells)
     doc.save(path)
     return len(sheets)
 
@@ -934,6 +1005,12 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--one-page", action="store_true",
                    help="tutto su un foglio: rimpicciolisce il quadrato (al massimo --cell-mm) "
                         "quanto basta")
+    f.add_argument("--split", type=pair(int), metavar="COLONNExRIGHE",
+                   help="divide in parti uguali, un foglio per parte (es. 2x2 = 4 fogli); "
+                        "quadrato il piu' grande che sta, al massimo --cell-mm")
+    f.add_argument("--overlap", type=int,
+                   help="quadrati delle parti vicine mostrati chiari oltre la linea rossa "
+                        "di taglio (default 3 con --split, altrimenti 0)")
     return p
 
 
@@ -1475,7 +1552,7 @@ def process(path: Path, args) -> None:
     print(f"  -> {stem.with_suffix('.png')}")
     if args.pdf:
         n = write_pdf(stem.with_suffix(".pdf"), cells, path.stem, args)
-        mm = f", quadrato {args.cell_mm:g} mm" if args.one_page else ""
+        mm = f", quadrato {args.cell_mm:g} mm" if args.one_page or args.split else ""
         print(f"  -> {stem.with_suffix('.pdf')} ({n} {'foglio' if n == 1 else 'fogli'}{mm})")
         if args.one_page and args.cell_mm < SMALL_CELL_MM:
             print(f"  attenzione: quadrato di {args.cell_mm:g} mm, difficile da leggere; "

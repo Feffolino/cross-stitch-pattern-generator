@@ -106,6 +106,11 @@ test.jpeg: 675x1200px -> 117 x 208 quadrati, lato 5.786 x 5.791px, ...
 - Tutto in un foglio: `--one-page` rimpicciolisce il quadrato (al massimo `--cell-mm`)
   quanto basta; sotto 1,5 mm avvisa che diventa difficile da leggere. Nella pagina web:
   "tutto in un foglio".
+- Diviso in parti uguali: `--split 2x2` fa 4 fogli (uno per parte) con il quadrato piu'
+  grande che sta (al massimo `--cell-mm`). Ogni foglio ha la mini mappa con la parte in
+  rosso, una linea rossa dove avviene il taglio e, oltre la linea, i primi 3 quadrati
+  della parte vicina in chiaro per allineare i fogli (`--overlap N` per cambiarli,
+  `--overlap 0` per toglierli).
 
 ## Se qualcosa non torna
 
